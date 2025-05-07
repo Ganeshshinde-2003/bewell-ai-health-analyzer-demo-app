@@ -1,0 +1,8 @@
+streamlit
+google-generativeai
+python-dotenv
+PyMuPDF  # For PDF extraction (imported as fitz)
+pandas   # For Excel and CSV reading
+python-docx # For DOCX extraction (imported as docx)
+openpyxl # Dependency for pandas to read .xlsx files
+xlrd # Dependency for pandas to read older .xls files (Note: xlrd support for .xls formats is deprecated in newer pandas versions, might need specific version constraint if issues arise)

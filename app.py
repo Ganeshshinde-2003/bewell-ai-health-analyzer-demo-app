@@ -110,11 +110,11 @@ if not api_key:
 model_name = "gemini-2.0-flash"
 
 generation_config = {
-    "temperature": 0.7,  # Adjust for creativity vs. predictability. For strict JSON, lower might be better (e.g., 0.1-0.5)
+    "temperature": 0.1,  # <--- Change this for more deterministic JSON
     "top_p": 0.95,
     "top_k": 64,
-    "max_output_tokens": 8192,  # Generous output size
-    "response_mime_type": "text/plain",  # Request text/plain, but instruct AI to return JSON
+    "max_output_tokens": 8192,
+    "response_mime_type": "text/plain", # Keep as text/plain or try "application/json"
 }
 
 # --- The Main Prompt Construction (using the JSON structure definition) ---
@@ -289,7 +289,6 @@ def clean_json_string(json_string):
         stripped_string = stripped_string[:-len('```')].rstrip()
 
     # Remove trailing commas within JSON objects and arrays
-    # This regex is specifically for fixing trailing commas *before* closing braces/brackets.
     stripped_string = re.sub(r',\s*}', '}', stripped_string)
     stripped_string = re.sub(r',\s*]', ']', stripped_string)
 

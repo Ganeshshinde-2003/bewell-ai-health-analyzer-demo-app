@@ -81,11 +81,11 @@ def extract_text_from_file(file_path):
 model_name = "gemini-2.0-flash"
 
 generation_config = {
-    "temperature": 0.7,
+    "temperature": 0.1,  # <--- Change this for more deterministic JSON
     "top_p": 0.95,
     "top_k": 64,
     "max_output_tokens": 8192,
-    "response_mime_type": "text/plain",
+    "response_mime_type": "text/plain", # Keep as text/plain or try "application/json"
 }
 
 # --- The Main Prompt Construction (using the JSON structure definition) ---

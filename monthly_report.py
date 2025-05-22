@@ -78,7 +78,6 @@ def extract_text_from_file(uploaded_file):
     return text
 
 # --- API Key Handling ---
-# Prioritize Streamlit secrets, then environment variable, then user input
 api_key = "AIzaSyArQ9zeya1SO-IwsMappkLStXYT0W7WXfk" # Ensure your actual API key is handled securely
 if not api_key:
     # This section is if you plan to use Streamlit Cloud secrets or environment variables

@@ -5,7 +5,7 @@ import fitz  # PyMuPDF - for PDF
 import io  # To handle file bytes
 import pandas as pd  # for Excel and CSV
 from docx import Document  # for .docx files
-import json  # Keep json imported for the parsing attempt in the output section
+import json  # For JSON parsing
 import re
 
 # --- Page Configuration ---
@@ -28,24 +28,19 @@ def extract_text_from_file(uploaded_file):
     text = ""
 
     try:
-        # Read the file into a BytesIO object
         file_bytes = uploaded_file.getvalue()
-
         if file_extension == ".pdf":
-            # PDF extraction using PyMuPDF (fitz)
             try:
                 pdf_document = fitz.open(stream=file_bytes, filetype="pdf")
                 for page_num in range(pdf_document.page_count):
                     page = pdf_document.load_page(page_num)
-                    # Use get_text("text") for standard text extraction
-                    text += page.get_text("text") + "\n"  # Add newline between pages
+                    text += page.get_text("text") + "\n"
                 pdf_document.close()
             except Exception as e:
                 st.error(f"Error processing PDF file: {e}")
                 return "[Error Processing PDF File]"
 
         elif file_extension == ".docx":
-            # DOCX extraction using python-docx
             try:
                 doc = Document(io.BytesIO(file_bytes))
                 for para in doc.paragraphs:
@@ -55,82 +50,61 @@ def extract_text_from_file(uploaded_file):
                 return "[Error Processing DOCX File]"
 
         elif file_extension in [".xlsx", ".xls"]:
-            # Excel extraction using pandas
             try:
-                # Read all sheets into a dictionary of DataFrames
                 excel_data = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
                 for sheet_name, df in excel_data.items():
                     text += f"--- Sheet: {sheet_name} ---\n"
-                    # Convert DataFrame to a simple text representation suitable for AI prompt
-                    text += df.to_string(index=False) + "\n\n"  # Use to_string for better readability than CSV
+                    text += df.to_string(index=False) + "\n\n"
             except Exception as excel_e:
-                # Catch pandas specific errors or missing dependencies (xlrd, openpyxl)
                 st.warning(
-                    f"Could not read Excel file '{uploaded_file.name}'. Ensure 'openpyxl' (for .xlsx) or 'xlrd' (for .xls) is installed if needed. Error: {excel_e}")
-                return f"[Could not automatically process Excel file {uploaded_file.name} - Please try pasting the text or saving as PDF/TXT.]"  # Indicate failure
+                    f"Could not read Excel file '{uploaded_file.name}'. Ensure 'openpyxl' (for .xlsx) or 'xlrd' (for .xls) is installed. Error: {excel_e}")
+                return f"[Could not automatically process Excel file {uploaded_file.name} - Please try pasting the text or saving as PDF/TXT.]"
 
         elif file_extension in [".txt", ".csv"]:
-            # Text or CSV extraction (simple read)
-            text = file_bytes.decode('utf-8', errors='ignore')  # Add errors='ignore' for robustness
+            text = file_bytes.decode('utf-8', errors='ignore')
 
         else:
-            # Handle unsupported file types explicitly
-            st.warning(f"Unsupported file type uploaded: {file_extension} for file '{uploaded_file.name}'")
-            return "[Unsupported File Type Uploaded]"  # Return a marker for unsupported type
+            st.warning(f"Unsupported file type: {file_extension} for file '{uploaded_file.name}'")
+            return "[Unsupported File Type Uploaded]"
 
     except Exception as e:
-        # Catch any other errors during processing
         st.error(f"An error occurred while processing '{uploaded_file.name}': {e}")
-        return "[Error Processing File]"  # Return a marker for processing error
+        return "[Error Processing File]"
 
-    # Basic check if text was extracted (ignore for txt/csv as they might be empty)
-    if not text.strip() and file_extension not in [".txt", ".csv"] and not text.startswith(
-            "["):  # Check if it's empty and not already an error/warning marker
+    if not text.strip() and file_extension not in [".txt", ".csv"]:
         st.warning(
             f"No readable text extracted from '{uploaded_file.name}'. The file might be scanned, empty, or have complex formatting. Consider pasting the text manually.")
-
     return text
 
-
 # --- API Key Handling ---
-# Prioritize Streamlit secrets, then environment variable, then user input
-api_key = "AIzaSyArQ9zeya1SO-IwsMappkLStXYT0W7WXfk" # Ensure your actual API key is handled securely
+api_key = "AIzaSyArQ9zeya1SO-IwsMappkLStXYT0W7WXfk"
 if not api_key:
-    # This section is if you plan to use Streamlit Cloud secrets or environment variables
-    # For local development, directly assigning the key here is fine for testing.
-    # For deployment, remove the hardcoded key and rely on secrets/env vars.
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        st.warning("Please add your Google/Gemini API key to your environment variables (e.g., in a .env file as GOOGLE_API_KEY), Streamlit secrets, or paste it below.")
-        # Fallback to text input in the app if key is not found elsewhere
-        api_key = st.text_input("Or paste your Google/Gemini API Key here:", type="password")
-
+    st.warning("Please add your Google/Gemini API key to Streamlit secrets or environment variables, or paste it below.")
+    api_key = st.text_input("Paste your Google/Gemini API Key here:", type="password")
 
 # --- Gemini Model Configuration ---
 model_name = "gemini-2.0-flash"
-
 generation_config = {
-    "temperature": 0.7,  # Adjust for creativity vs. predictability. For strict JSON, lower might be better (e.g., 0.1-0.5)
+    "temperature": 0.2,  # Low for deterministic JSON
     "top_p": 0.95,
     "top_k": 64,
-    "max_output_tokens": 8192,  # Generous output size
-    "response_mime_type": "text/plain",  # Request text/plain, but instruct AI to return JSON
+    "max_output_tokens": 16384,  # Increased for large responses
+    "response_mime_type": "application/json"  # Ensures strict JSON
 }
 
-# --- The Main Prompt Construction (using the JSON structure definition) ---
-# This section now defines the two parts of the prompt
+# --- The Main Prompt Construction ---
 BASE_PROMPT_INSTRUCTIONS = """
 Role: Bewell AI Assistant.
-Persona: Holistic women's health expert, precision medicine, functional doctor, Women focused care.
-Tone: Approachable, professional, empathetic, supportive, clear, accessible. Avoid casual language. Do not use the pronoun "I". Avoid personifying the analysis tone and manner. Focus on empowering the user with clear, accurate, and personalized insights from Bewell.
+Persona: Holistic women's health expert, precision medicine, functional doctor, women-focused care.
+Tone: Approachable, professional, empathetic, supportive, clear, accessible. Avoid casual language. Do not use the pronoun "I". Avoid personifying the analysis tone. Focus on empowering the user with clear, accurate, personalized insights.
 
-Input: User's health assessment text and lab report text. Analyze *only* the information provided in these texts. Base the analysis, recommendations, and rationale *solely* on the specific biomarkers and symptoms reported by the user in the provided data.
+Input: User's health assessment text and lab report text. Analyze *only* the information provided. Base analysis, recommendations, and rationale *solely* on the specific biomarkers and symptoms reported.
 
 ---
 
 User Data:
 
-Here is the user's Health Assessment text:
+Health Assessment text:
 {health_assessment_text}
 
 {lab_report_section_placeholder}
@@ -139,162 +113,150 @@ Here is the user's Health Assessment text:
 
 Instructions for Output:
 
-Generate ONE complete response as a JSON object. Do NOT include any introductory or concluding text outside the JSON object. **Do NOT wrap the JSON object in markdown code blocks (```json ... ``` or ``` ... ```).** Populate all fields based *only* on the provided user data, adhering to the persona, tone, and data constraints specified.
+Generate ONE complete response as a JSON object adhering strictly to the JSON_STRUCTURE_DEFINITION below. Do NOT include introductory or concluding text outside the JSON. Do NOT wrap in markdown code blocks (```json ... ``` or ``` ... ```). Populate all fields based *only* on provided user data, adhering to persona, tone, and constraints.
 
-**Conditional Analysis:**
-If a lab report is provided, follow the detailed biomarker analysis instructions as outlined below.
-If the user does NOT provide a lab report, clearly state that the analysis is based solely on the health assessment data provided by the user. In this case:
-- Skip the biomarker-specific analysis.
-- Provide comprehensive health insights, personalized recommendations, and action plans based exclusively on the user’s reported symptoms, lifestyle factors, and health concerns identified in the health assessment.
-- Recommend specific biomarkers the user should consider measuring based on their health assessment responses, clearly explaining why each biomarker is important for their personalized health management.
+**CRITICAL ACCURACY REQUIREMENT: BIOMARKER COUNTING**
+1. **Process All Biomarkers**: Extract all biomarkers with valid results from the lab report, identifying names, results, ranges, and statuses ("optimal", "keep_in_mind", "attention_needed"). Exclude "Not Performed" or "Request Problem" biomarkers from 'detailed_biomarkers'; list these in 'crucial_biomarkers_to_measure' with symptom-linked explanations.
+2. **Count Verification**: After generating 'detailed_biomarkers', count the total objects. Assign this to 'lab_analysis.biomarkers_tested_count'. Count biomarkers by status for 'biomarker_categories_summary'. Verify that 'optimal_count' + 'keep_in_mind_count' + 'attention_needed_count' equals 'biomarkers_tested_count'. Reprocess if counts mismatch.
+3. **Log Parsing Issues**: If lab report text is ambiguous (e.g., scanned PDFs, tables), note in 'lab_analysis.overall_summary': "Some lab data could not be parsed due to formatting issues. Recommendations are based on available data and health assessment."
 
-**Emphasis on Detail and Completeness:**
-* Provide comprehensive and detailed descriptions in all relevant string fields, not just one or two sentences.
-* Include specific numbers or counts within descriptions where they are relevant (e.g., in summaries or when discussing biomarker categories).
-* Ensure *all* arrays/lists within the JSON structure are populated with relevant items derived *from the provided user data* and your analysis. If the input data does not provide information relevant to a specific list (e.g., no health assessment details about stress for recovery tips), populate with general guidance related to women's health that aligns with the pillar, and clearly state these are general examples, but prioritize linking to the user's data. Avoid returning empty lists if the data allows for content.
+**CRITICAL NON-EMPTY ARRAY REQUIREMENT**
+- For 'additional_guidance.structure' arrays ('recommended_foods', 'cautious_foods', 'recommended_workouts', 'avoid_habits_move', 'recommended_recovery_tips', 'avoid_habits_rest_recover'), ensure ALL are populated with at least 2 relevant items. Use user data (symptoms, diagnoses, biomarkers) first. If insufficient, include general women’s health recommendations, stating they are general.
+- **Symptom-to-Recommendation Mappings** (use these to populate arrays):
+  - **Constipation**: 'recommended_foods': fiber-rich foods (e.g., vegetables, chia seeds); 'cautious_foods': low-fiber processed foods.
+  - **Lactose sensitivity**: 'cautious_foods': dairy products (e.g., milk, cheese).
+  - **Stress**: 'recommended_recovery_tips': meditation, deep breathing; 'avoid_habits_rest_recover': excessive screen time before bed.
+  - **Fatigue**: 'recommended_workouts': low-impact exercises (e.g., yoga, walking); 'recommended_recovery_tips': consistent sleep schedule.
+  - **Sedentary job**: 'recommended_workouts': daily movement (e.g., walking, stretching); 'avoid_habits_move': prolonged sitting.
+  - **High cortisol**: 'recommended_recovery_tips': stress-reducing activities (e.g., mindfulness); 'avoid_habits_rest_recover': caffeine late in day.
+  - **Low estrogen**: 'recommended_foods': phytoestrogen-rich foods (e.g., flaxseeds, soy).
+- Verify all arrays are non-empty before finalizing JSON. If user data is missing, include general examples (e.g., "No dietary data provided; general recommendations for women’s health include...").
 
-**Four Pillars Scoring:**
-For each of the "Four Pillars" (Eat Well, Sleep Well, Move Well, Recover Well), provide a `score` from 1 to 10 as an integer:
-- A score of 1 indicates significant room for improvement or concerning habits in that pillar.
-- A score of 10 indicates optimal current habits and excellent alignment with healthy practices in that pillar based on the provided user data.
-The score should reflect the user's *current status and habits* in that pillar as inferred from their health assessment and (if provided) lab report.
+**CRITICAL SCHEMA ADHERENCE**
+- Include ALL specified fields in JSON_STRUCTURE_DEFINITION, even if empty (e.g., 'detailed_biomarkers' as [] if no lab report). Do NOT add undefined fields.
+- Ensure array items follow specified structures without metadata keys (e.g., no "_item_structure").
+- Use detailed, complete descriptions in string fields.
 
-Here is the required JSON object structure. For arrays, ensure the items within the array conform to the described structure without including the "_item_structure" keys themselves:
+**CRITICAL TEXT MARKING FOR HIGHLIGHTING**
+- Use **C1[text]C1** for primary highlights: total counts, key biomarker names/statuses, diagnoses, main symptoms.
+- Use **C2[text]C2** for secondary highlights: specific values, ranges, "not performed" tests, actionable keywords.
+- Apply sparingly to critical terms (e.g., **C1[fatigue]C1**, **C2[4.310 uIU/mL]C2**).
+
+**KEY PERSONALIZATION AND SCIENTIFIC LINKING**
+- Anchor every recommendation to user input (symptom, diagnosis, biomarker).
+- Explicitly reference symptoms/diagnoses (e.g., "Given **C1[constipation]C1**, include fiber-rich foods").
+- For "Not Performed" biomarkers, list in 'crucial_biomarkers_to_measure' with symptom links (e.g., "Test **C2[DHEA, Serum]C2** for **C1[stress]C1**").
+- Provide women-specific, science-backed rationale (e.g., "Fiber supports **C2[estrogen detoxification]C2** for **C1[bloating]C1**").
+- Use precise language (e.g., "Based on **C1[lactose sensitivity]C1**, avoid dairy"). Avoid vague terms like "some women."
+- Explain hormone interactions (e.g., "**C2[cortisol]C2** impacts **C1[bloating]C1**").
+
+**Conditional Analysis**
+- **With Lab Report**: Analyze all valid biomarkers, categorize by status, link to symptoms/diagnoses.
+- **Without Lab Report**: Use health assessment only. Recommend biomarkers to test (e.g., "For **C1[fatigue]C1**, test **C2[thyroid panel]C2**").
+- Populate arrays with relevant items. If data is insufficient, use general women’s health guidance, noting it’s general.
+
+**Four Pillars Scoring**
+- Score each pillar (Eat Well, Sleep Well, Move Well, Recover Well) from 1 (needs improvement) to 10 (optimal) based on user data.
+- Link scores to inputs (e.g., "**C1[inconsistent eating]C1** gives Eat Well **C2[4]C2**").
 """
 
-# The JSON structure. Removed the "_item_structure" definitions as separate keys.
-# Instead, the descriptions for arrays now clarify what their items should look like.
+# --- JSON Structure Definition ---
 JSON_STRUCTURE_DEFINITION = """
 {
   "lab_analysis": {
-    "overall_summary": "string - Provide a comprehensive synthesis of the user's current health status based solely on provided lab results and health assessment. Highlight significant areas of concern or strengths in simple, personalized, and detailed language. If no lab report is provided, state that the analysis is based solely on the health assessment data.",
-    "biomarkers_tested_count": "integer - Total number of biomarkers listed and analyzed from the provided lab report. If no lab report, this should be 0.",
+    "overall_summary": "string - Synthesize health status from lab results and health assessment. Reference symptoms/diagnoses (e.g., 'Your **C1[fatigue]C1** and **C2[high TSH]C2** suggest thyroid monitoring'). If no lab report, state analysis is health assessment only. Note unreadable lab data: 'Some lab data could not be parsed.'",
+    "biomarkers_tested_count": "integer - Exact count of 'detailed_biomarkers' objects. Verify against array length. Set to 0 if no lab report.",
     "biomarker_categories_summary": {
-      "description_text": "string - A detailed summary of the biomarker categories, explicitly mentioning the total number tested and the count for each status (e.g., 'Out of [total count] biomarkers tested, [optimal count] are Optimal, [keep in mind count] require Keep in Mind, and [attention needed count] need Attention Needed'). If no lab report, state that no lab biomarkers were analyzed.",
-      "optimal_count": "integer - Count of biomarkers whose status is 'Optimal (Green)'. If no lab report, this should be 0.",
-      "keep_in_mind_count": "integer - Count of biomarkers whose status is 'Keep in Mind (Yellow)'. If no lab report, this should be 0.",
-      "attention_needed_count": "integer - Count of biomarkers whose status is 'Attention Needed (Orange-Red)'. If no lab report, this should be 0."
+      "description_text": "string - Summarize categories (e.g., 'Out of **C1[{biomarkers_tested_count}]C1** biomarkers, **C2[{optimal_count}]C2** Optimal, **C2[{keep_in_mind_count}]C2** Keep in Mind, **C2[{attention_needed_count}]C2** Attention Needed'). Exclude 'Not Performed' tests.",
+      "optimal_count": "integer - Count of 'optimal' biomarkers. Set to 0 if no lab report.",
+      "keep_in_mind_count": "integer - Count of 'keep_in_mind' biomarkers. Set to 0 if no lab report.",
+      "attention_needed_count": "integer - Count of 'attention_needed' biomarkers. Set to 0 if no lab report."
     },
     "detailed_biomarkers": [
-      // array of objects - Contains comprehensive details for *each* biomarker listed in the provided lab report. If no lab report, this array should be empty.
-      // Each object in this array should have the following structure:
-      // {
-      //   "name": "string - The full name of the biomarker.",
-      //   "status": "string - Machine-readable status: 'optimal', 'keep_in_mind', or 'attention_needed'. Determine this based on the result relative to the provided range.",
-      //   "status_label": "string - Display label mirroring original status labels (e.g., 'Optimal (Green)', 'Keep in Mind (Yellow)', 'Attention Needed (Orange-Red)').",
-      //   "result": "string - User's specific measured result, including units.",
-      //   "range": "string - The provided reference or optimal range.",
-      //   "cycle_impact": "string - Provide a detailed explanation of any known fluctuations or impacts specific menstrual cycle phases have on this biomarker relevant to women's health, or state 'Not typically impacted by cycle' / 'Cycle impact not well-established'.",
-      //   "why_it_matters": "string - Provide a detailed explanation of the biomarker's primary function, its importance specifically to women's health, and the potential practical implications if *this user's specific level* is abnormal or borderline. Use clear, science-backed explanations without medical jargon, assuming the user has no medical background."
-      // }
+      {
+        "name": "string - Full biomarker name (e.g., 'Estradiol').",
+        "status": "string - 'optimal', 'keep_in_mind', or 'attention_needed'.",
+        "status_label": "string - Display label (e.g., 'Optimal (Green)').",
+        "result": "string - Result with units (e.g., '**C2[4.310 uIU/mL]C2**').",
+        "range": "string - Reference range (e.g., '0.450-4.500').",
+        "cycle_impact": "string - Menstrual cycle impact or 'Not typically impacted by cycle' (e.g., 'Estradiol fluctuates, relevant to **C1[cramps]C1**').",
+        "why_it_matters": "string - Role in women’s health, linked to user data (e.g., 'High **C2[TSH]C2** may cause **C1[fatigue]C1**')."
+      }
     ],
     "crucial_biomarkers_to_measure": [
-      // array of objects - A list of essential biomarkers women should measure regularly, with a brief explanation for each.
-      // If no lab report is provided, this list should be populated based on the health assessment responses, recommending relevant biomarkers for the user's reported concerns.
-      // Each object in this array should have the following structure:
-      // {
-      //   "name": "string - The name of the crucial biomarker.",
-      //   "importance": "string - Provide a brief yet clear explanation of its importance in accessible language."
-      // }
+      {
+        "name": "string - Biomarker name (e.g., 'DHEA, Serum').",
+        "importance": "string - Why testing is needed (e.g., 'Test **C2[DHEA, Serum]C2** for **C1[stress]C1**')."
+      }
     ],
-    "health_recommendation_summary": "array of strings - Provide clear, concise, *actionable*, and specific steps tailored *specifically* to the user's *provided* lab results and health assessment findings. Use complete phrases for each step."
+    "health_recommendation_summary": "array of strings - Actionable steps (e.g., 'Retest **C2[DHEA, Serum]C2** for **C1[stress]C1**')."
   },
   "four_pillars": {
-    "introduction": "string - Provide a detailed introduction summarizing the user's overall health status and key findings from the lab analysis section in clear, accessible language, setting the stage for the Four Pillars analysis.",
+    "introduction": "string - Summarize health status and lab findings for pillars.",
     "pillars": [
-      // array of objects - Contains the detailed analysis and recommendations for each of the four pillars: Eat Well, Sleep Well, Move Well, Recover Well.
-      // Each object in this array should have the following structure:
-      // {
-      //   "name": "string - The name of the pillar (e.g., 'Eat Well', 'Sleep Well', 'Move Well', 'Recover Well').",
-      //   "score": "integer - A numerical score for this pillar, ranging from 1 (needs significant attention) to 10 (optimal/excellent adherence). This score should reflect the user's current status and habits related to this pillar based on the provided health assessment and lab report data. Higher scores indicate better current alignment with optimal health practices in this area.",
-      //   "why_it_matters": "string - Explain in detail how this pillar is *specifically relevant to this user's unique health assessment details and lab findings*. Use reachable language and explicitly link to their reported data points.",
-      //   "personalized_recommendations": "array of strings - Provide *actionable, personalized*, and specific advice tailored to *this user's specific status and lifestyle*. Recommendations must be achievable and written as clear steps.",
-      //   "root_cause_correlation": "string - Clearly explain in accessible language how *each recommendation* within this pillar's personalized recommendations connects directly to the *root causes or contributing factors* identified *in this user's lab results and health assessment*.",
-      //   "science_based_explanation": "string - For *each recommendation* in this pillar, provide a clear, simple, and detailed scientific basis focused on practical user benefits, without medical jargon.",
-      //   "additional_guidance": {
-      //     "description": "Specific lists of recommended/avoided items for this pillar, populated based on relevance to user data or general women's health principles. If specific guidance cannot be derived from user data, provide general, relevant examples for women's health in these lists, and clearly state these are general examples.",
-      //     "structure": {
-      //       "recommended_foods": [
-      //         // array of objects - For 'Eat Well': List recommended top foods. Populate based on user data relevance AND general women's health.
-      //         // Each object: {name: string, description: string|null}.
-      //       ],
-      //       "cautious_foods": [
-      //         // array of objects - For 'Eat Well': List foods to approach cautiously. Populate based on user data relevance AND general women's health.
-      //         // Each object: {name: string, description: string|null}.
-      //       ],
-      //       "recommended_workouts": [
-      //         // array of objects - For 'Move Well': List recommended workouts/types of movement. Populate based on user data relevance AND general women's health.
-      //         // Each object: {name: string, description: string|null}.
-      //       ],
-      //       "avoid_habits_move": [
-      //         // array of objects - For 'Move Well': List habits to avoid. Populate based on user data relevance AND general women's health.
-      //         // Each object: {name: string, description: string|null}.
-      //       ],
-      //       "recommended_recovery_tips": [
-      //         // array of objects - For 'Sleep Well' and 'Recover Well': List recommended recovery tips. Populate based on user data relevance AND general women's health.
-      //         // Each object: {name: string, description: string|null}.
-      //       ],
-      //       "avoid_habits_rest_recover": [
-      //         // array of objects - For 'Sleep Well' and 'Recover Well': List habits to avoid related to rest/recovery. Populate based on user data relevance AND general women's health.
-      //         // Each object: {name: string, description: string|null}.
-      //       ]
-      //     }
-      //   }
-      // }
+      {
+        "name": "string - Pillar name (e.g., 'Eat Well').",
+        "score": "integer - 1 (needs improvement) to 10 (optimal), based on user data (e.g., '**C2[4]C2** for **C1[inconsistent eating]C1**').",
+        "why_it_matters": "string - Relevance to user data (e.g., 'Nutrition impacts **C2[estrogen clearance]C2** for **C1[bloating]C1**').",
+        "personalized_recommendations": "array of strings - Actionable advice (e.g., 'Eat fiber-rich foods for **C1[constipation]C1**').",
+        "root_cause_correlation": "string - Link to root causes (e.g., 'Fiber addresses **C1[constipation]C1** tied to **C2[low estrogen]C2**').",
+        "science_based_explanation": "string - Scientific basis (e.g., 'Fiber supports **C2[estrogen detoxification]C2** for **C1[mood swings]C1**').",
+        "additional_guidance": {
+          "description": "string - Describe guidance, note if general due to limited data.",
+          "structure": {
+            "recommended_foods": [{"name": "string", "description": "string|null"}],
+            "cautious_foods": [{"name": "string", "description": "string|null"}],
+            "recommended_workouts": [{"name": "string", "description": "string|null"}],
+            "avoid_habits_move": [{"name": "string", "description": "string|null"}],
+            "recommended_recovery_tips": [{"name": "string", "description": "string|null"}],
+            "avoid_habits_rest_recover": [{"name": "string", "description": "string|null"}]
+          }
+        }
+      }
     ]
   },
   "supplements": {
-    "description": "Personalized supplement recommendations based specifically and *only* on the provided blood test biomarkers and detailed health assessment responses. If no lab report is provided, base recommendations solely on the health assessment.",
+    "description": "string - Explain supplement recommendations based on lab/health assessment.",
     "structure": {
       "recommendations": [
-        // array of objects - Contains detailed information for each recommended supplement.
-        // Each object in this array should have the following structure:
-        // {
-        //   "name": "string - Supplement Name.",
-        //   "rationale": "string - Personalized Rationale: Provide a detailed explanation of *why* recommended based on user's specific biomarkers (mention status: Optimal, Keep in Mind, Attention Needed) and reported health assessment symptoms. Explain exactly how it addresses *this user's specific issues reported* using simple, accessible language. If no lab report, base rationale solely on health assessment.",
-        //   "expected_outcomes": "string - Expected Outcomes: Describe tangible, *personalized* benefits the user can realistically notice, linked to their specific issues.",
-        //   "dosage_and_timing": "string - Recommended Dosage & Timing: Clearly outline precise dosage instructions and optimal timing, based on general guidelines or evidence where applicable.",
-        //   "situational_cyclical_considerations": "string - Situational/Cyclical Considerations: Clearly identify if beneficial during specific menstrual cycle phases or particular life circumstances *if applicable and relevant to the supplement and user's provided profile*. Provide a simple explanation *why* this is the case simply."
-        // }
+        {
+          "name": "string - Supplement name (e.g., 'Magnesium').",
+          "rationale": "string - Link to biomarkers/symptoms (e.g., 'For **C2[low Estradiol]C2** and **C1[mood swings]C1**').",
+          "expected_outcomes": "string - Benefits (e.g., 'Improved **C1[sleep]C1**').",
+          "dosage_and_timing": "string - Dosage (e.g., '200 mg daily, evening').",
+          "situational_cyclical_considerations": "string - Cycle-specific use (e.g., 'Use in **C1[luteal phase]C1** for **C1[cramps]C1**')."
+        }
       ],
-      "conclusion": "string - The concluding guidance: Provide concise, reassuring guidance to encourage adherence. Clearly state that supplements are adjunctive and medical consultation is necessary for diagnosis and treatment."
+      "conclusion": "string - Encourage adherence, note medical consultation."
     }
   },
   "action_plan": {
-    "description": "Consolidated actionable recommendations for quick reference on the main summary page.",
+    "description": "string - Summarize actionable recommendations.",
     "structure": {
-      "foods_to_enjoy": "array of strings - Compile key recommended foods (names and brief benefits/reasons) from the 'recommended_foods' list under the 'Eat Well' pillar. If the source list is empty or contains only general examples, clearly state these are general suggestions.",
-      "foods_to_limit": "array of strings - Compile key cautious foods (names and brief reasons) from the 'cautious_foods' list under the 'Eat Well' pillar. If the source list is empty or contains only general examples, clearly state these are general suggestions.",
-      "daily_habits": "array of strings - Compile key actionable daily practices and habits mentioned in the 'Health Recommendation Summary' and 'personalized_recommendations' across the Four Pillars (e.g., related to consistent sleep, hydration, meal timing, stress management techniques).",
-      "rest_and_recovery": "array of strings - Compile key rest and recovery tips/habits (names and brief benefits/reasons) from the 'recommended_recovery_tips' lists under the 'Sleep Well' and 'Recover Well' pillars. If the source list is empty or contains only general examples, clearly state these are general suggestions.",
-      "movement": "array of strings - Compile key movement/workout recommendations (names and brief benefits/reasons) from the 'recommended_workouts' list under the 'Move Well' pillar. If the source list is empty or contains only general examples, clearly state these are general suggestions."
+      "foods_to_enjoy": "array of strings - Foods linked to symptoms (e.g., 'Fiber-rich vegetables for **C1[constipation]C1**').",
+      "foods_to_limit": "array of strings - Foods to avoid (e.g., 'Dairy due to **C1[lactose sensitivity]C1**').",
+      "daily_habits": "array of strings - Habits (e.g., 'Sleep **C2[7-9 hours]C2** for **C1[cortisol]C1**').",
+      "rest_and_recovery": "array of strings - Recovery tips (e.g., 'Meditation for **C1[stress]C1**').",
+      "movement": "array of strings - Workouts (e.g., 'Yoga for **C1[stress]C1**')."
     }
   }
 }
 """
 
 def clean_json_string(json_string):
-    """Removes leading/trailing markdown code blocks and illegal trailing commas from a string."""
+    """Removes markdown code blocks and illegal trailing commas."""
     if not isinstance(json_string, str):
         return json_string
-
     stripped_string = json_string.strip()
-
-    # Remove markdown code blocks (```json or ```)
     if stripped_string.startswith('```json'):
         stripped_string = stripped_string[len('```json'):].lstrip()
     elif stripped_string.startswith('```'):
         stripped_string = stripped_string[len('```'):].lstrip()
     if stripped_string.endswith('```'):
         stripped_string = stripped_string[:-len('```')].rstrip()
-
-    # Remove trailing commas within JSON objects and arrays
-    # This regex is specifically for fixing trailing commas *before* closing braces/brackets.
     stripped_string = re.sub(r',\s*}', '}', stripped_string)
     stripped_string = re.sub(r',\s*]', ']', stripped_string)
-
     return stripped_string
-
 
 # --- Main Streamlit App ---
 def main():
@@ -302,44 +264,36 @@ def main():
     Main function to run the Bewell AI Health Analyzer Streamlit app.
     """
     st.title("Bewell AI Health Analyzer")
-    st.write("Upload your lab report and health assessment files to get a personalized analysis.")
+    st.write("Upload your lab report and health assessment files for a personalized analysis.")
 
-    # --- File Upload Section ---
-    lab_report_file = st.file_uploader("Upload your Lab Report (optional)", type=[".pdf", ".docx", ".xlsx", ".xls", ".txt", ".csv"])
-    health_assessment_file = st.file_uploader("Upload your Health Assessment (required)", type=[".pdf", ".docx", ".xlsx", ".xls", ".txt", ".csv"])
+    lab_report_file = st.file_uploader("Upload Lab Report (optional)", type=[".pdf", ".docx", ".xlsx", ".xls", ".txt", ".csv"])
+    health_assessment_file = st.file_uploader("Upload Health Assessment (required)", type=[".pdf", ".docx", ".xlsx", ".xls", ".txt", ".csv"])
 
-    # --- Validate that health assessment file is provided ---
     if not health_assessment_file:
         st.error("Health Assessment file is required. Please upload a valid file.")
-        return  # Stop if the health assessment file is missing
+        return
 
-    # --- Process Files and Get Texts ---
     raw_lab_report_input = extract_text_from_file(lab_report_file) if lab_report_file else ""
     raw_health_assessment_input = extract_text_from_file(health_assessment_file)
 
-    # --- Error Handling for File Processing ---
     if raw_health_assessment_input.startswith("[Error"):
         st.error(f"Error processing Health Assessment: {raw_health_assessment_input}")
-        return  # Exit if health assessment processing failed
-
+        return
     if raw_lab_report_input.startswith("[Error"):
         st.warning(f"Warning: Problem with Lab Report: {raw_lab_report_input}")
         st.write("Continuing analysis without lab report data.")
-        raw_lab_report_input = ""  # Set to empty string to avoid issues in prompt
+        raw_lab_report_input = ""
 
-
-    # --- Analyze Data and Display Results on Button Click---
     if st.button("Analyze Data"):
         if not api_key:
-            st.error("Please provide a Google/Gemini API key to proceed.")
+            st.error("Please provide a Google/Gemini API key.")
             return
 
-        with st.spinner("Analyzing data... (This may take a few moments)"):
+        with st.spinner("Analyzing data..."):
             try:
                 genai.configure(api_key=api_key)
-                model = genai.GenerativeModel(model_name=model_name)
+                model = genai.GenerativeModel(model_name=model_name, generation_config=generation_config)
 
-                # Conditionally build the lab report section of the prompt
                 lab_report_section = ""
                 if raw_lab_report_input:
                     lab_report_section = f"""
@@ -348,10 +302,9 @@ Here is the user's Lab Report text:
 """
                 else:
                     lab_report_section = """
-No Lab Report text was provided. The analysis will be based solely on the Health Assessment data.
+No Lab Report text was provided. Analysis will be based solely on Health Assessment data.
 """
 
-                # Format the prompt
                 prompt = BASE_PROMPT_INSTRUCTIONS.format(
                     health_assessment_text=raw_health_assessment_input,
                     lab_report_section_placeholder=lab_report_section
@@ -359,48 +312,74 @@ No Lab Report text was provided. The analysis will be based solely on the Health
 
                 response = model.generate_content(prompt)
 
-                # --- Process and Display Results ---
                 if response and response.text is not None:
                     cleaned_json_string = clean_json_string(response.text)
                     if cleaned_json_string.strip():
                         try:
                             analysis_data = json.loads(cleaned_json_string)
-                            st.header("Here is your Personalized Bewell Analysis:")
-                            st.json(analysis_data)  # Use st.json for formatted display
+                            # Validate biomarker counts
+                            detailed_biomarkers = analysis_data.get("lab_analysis", {}).get("detailed_biomarkers", [])
+                            biomarkers_count = len(detailed_biomarkers)
+                            reported_count = analysis_data.get("lab_analysis", {}).get("biomarkers_tested_count", 0)
+                            if biomarkers_count != reported_count:
+                                st.warning(f"Discrepancy: Reported biomarkers_tested_count ({reported_count}) does not match actual count ({biomarkers_count}). Correcting counts.")
+                                analysis_data["lab_analysis"]["biomarkers_tested_count"] = biomarkers_count
+                                optimal_count = sum(1 for bm in detailed_biomarkers if bm.get("status") == "optimal")
+                                keep_in_mind_count = sum(1 for bm in detailed_biomarkers if bm.get("status") == "keep_in_mind")
+                                attention_needed_count = sum(1 for bm in detailed_biomarkers if bm.get("status") == "attention_needed")
+                                analysis_data["lab_analysis"]["biomarker_categories_summary"] = {
+                                    "description_text": f"Out of **C1[{biomarkers_count}]C1** biomarkers analyzed, **C2[{optimal_count}]C2** are Optimal, **C2[{keep_in_mind_count}]C2** require Keep in Mind, and **C2[{attention_needed_count}]C2** need Attention Needed.",
+                                    "optimal_count": optimal_count,
+                                    "keep_in_mind_count": keep_in_mind_count,
+                                    "attention_needed_count": attention_needed_count
+                                }
+                            # Validate non-empty arrays in additional_guidance
+                            for pillar in analysis_data.get("four_pillars", {}).get("pillars", []):
+                                guidance = pillar.get("additional_guidance", {}).get("structure", {})
+                                for key in ["recommended_foods", "cautious_foods", "recommended_workouts", "avoid_habits_move", "recommended_recovery_tips", "avoid_habits_rest_recover"]:
+                                    if not guidance.get(key):
+                                        st.warning(f"Empty array detected: {key} in pillar {pillar.get('name')}. Populating with general recommendations.")
+                                        guidance[key] = [
+                                            {"name": f"General {key.replace('_', ' ').title()} 1", "description": "General recommendation for women’s health due to limited specific data."},
+                                            {"name": f"General {key.replace('_', ' ').title()} 2", "description": "General recommendation for women’s health due to limited specific data."}
+                                        ]
+                            st.header("Your Personalized Bewell Analysis:")
+                            st.json(analysis_data)
                         except json.JSONDecodeError as e:
-                            st.error(f"Error: Failed to parse AI response as JSON.  The response was not valid JSON: {e}")
-                            st.write("The model returned text, but it was not valid JSON.  Here is the raw text from the AI to help with debugging:")
-                            st.text(response.text)  # Use st.text for raw text
+                            st.error(f"Error: Failed to parse AI response as JSON: {e}")
+                            st.write("The model returned text, but it was not valid JSON.")
+                        # Always display cleaned raw response
+                        with st.expander("Show Cleaned Raw Model Response (for debugging)"):
+                            st.subheader("Cleaned Raw Model Response")
+                            st.text(cleaned_json_string)
                     else:
-                        st.error("Error: The model returned an empty response.")
+                        st.error("Error: Model returned an empty response.")
+                        with st.expander("Show Cleaned Raw Model Response (for debugging)"):
+                            st.subheader("Cleaned Raw Model Response")
+                            st.text("Empty response received from the model.")
                 elif response and response.prompt_feedback:
-                    # Handle cases where the prompt was blocked
-                    st.error(f"Analysis request was blocked. Reason: {response.prompt_feedback.block_reason}")
+                    st.error(f"Analysis blocked. Reason: {response.prompt_feedback.block_reason}")
                     if response.prompt_feedback.safety_ratings:
                         st.write(f"Safety Ratings: {response.prompt_feedback.safety_ratings}")
                     st.write("Please review your input and try again.")
                 else:
-                    st.error("Error: Failed to generate a valid response from the model.")
-
+                    st.error("Error: Failed to generate a valid response.")
             except Exception as e:
                 st.error(f"An unexpected error occurred: {e}")
-                st.write("Please check your API key, network connection, and input files.")
+                st.write("Check API key, network, and input files.")
 
-        # --- Display Raw Input for Debugging ---
-        if st.expander("Show Raw Input Sent to AI (for debugging)"):
-            st.subheader("Raw Input Sent to AI (for debugging)")
+        with st.expander("Show Raw Input Sent to AI (for debugging)"):
+            st.subheader("Raw Input Sent to AI")
             if raw_lab_report_input:
                 st.write("Raw Lab Report Text:")
                 st.text(raw_lab_report_input)
             else:
-                st.write("No Lab Report data was provided.")
-
+                st.write("No Lab Report data provided.")
             if raw_health_assessment_input:
                 st.write("Raw Health Assessment Text:")
                 st.text(raw_health_assessment_input)
             else:
-                st.write("No Health Assessment data was provided.")
-
+                st.write("No Health Assessment data provided.")
 
 if __name__ == "__main__":
     main()

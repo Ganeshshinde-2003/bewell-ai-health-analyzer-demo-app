@@ -263,7 +263,7 @@ def main():
     """
     Main function to run the Bewell AI Health Analyzer Streamlit app.
     """
-    st.title("Bewell AI Health Analyzer")
+    st.title("Bewell AI Health Analyzer-Updated")
     st.write("Upload your lab report and health assessment files for a personalized analysis.")
 
     lab_report_file = st.file_uploader("Upload Lab Report (optional)", type=[".pdf", ".docx", ".xlsx", ".xls", ".txt", ".csv"])

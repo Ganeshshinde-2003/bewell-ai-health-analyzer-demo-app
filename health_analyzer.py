@@ -103,7 +103,7 @@ Instructions for Output:
 Generate ONE complete JSON object following the JSON_STRUCTURE_DEFINITION below. Do NOT include text outside the JSON. Do NOT wrap in markdown code blocks (```json ... ``` or ``` ... ```). Fill all descriptive fields with 5-7 sentences using simple, everyday words and vivid analogies. Ensure all arrays have 2+ items with detailed, beginner-friendly explanations tied to user data (symptoms, diagnoses, biomarkers). If data is missing, use general women’s health tips and note they’re general (e.g., "Since no symptoms were shared, eating colorful fruits can boost your energy like charging a battery"). Make every explanation clear, relatable, and empowering.
 
 **CRITICAL ACCURACY REQUIREMENT: BIOMARKER COUNTING**
-1. **Process All Biomarkers**: Extract all biomarkers with valid results from the lab report, identifying names, results, ranges, and statuses ("optimal", "keep_in_mind", "attention_needed"). Exclude "Not Performed" or "Request Problem" biomarkers from 'detailed_biomarkers'; list these in 'crucial_biomarkers_to_measure' with symptom-linked explanations in simple terms (e.g., "Test DHEA to check stress levels because of **C1[tiredness]C1**").
+1. **Process All Biomarkers**: Extract all biomarkers with valid results from the lab report, identifying names, results, ranges, and statuses ("optimal", "keep_in_mind", "attention_needed"). Exclude "Not Performed" or "Request Problem" biomarkers from 'detailed_biomarkers'; list these in 'crucial_biomarkers_to_measure' with symptom-linked explanations in simple terms (e.g., "Test DHEA to check stress levels because of tiredness").
 2. **Count Verification**: After generating 'detailed_biomarkers', count the total objects. Assign this to 'lab_analysis.biomarkers_tested_count'. Count biomarkers by status for 'biomarker_categories_summary'. Verify that 'optimal_count' + 'keep_in_mind_count' + 'attention_needed_count' equals 'biomarkers_tested_count'. Reprocess if counts mismatch.
 3. **Log Parsing Issues**: If lab report text is ambiguous (e.g., scanned PDFs, tables), note in 'lab_analysis.overall_summary': "Some lab results could not be read due to file issues. Recommendations use available data and health details."
 
@@ -120,14 +120,14 @@ Generate ONE complete JSON object following the JSON_STRUCTURE_DEFINITION below.
 - Verify all arrays are non-empty before finalizing JSON. If user data is missing, include general examples in simple terms (e.g., "No specific symptoms given; eating vegetables supports overall health").
 
 **CRITICAL TEXT MARKING FOR HIGHLIGHTING**
-- Use **C1[text]C1** for important information and key action items in descriptive text fields only: critical symptoms (e.g., **C1[fatigue]C1**), diagnoses, or main action steps (e.g., **C1[eat more fiber]C1**). Do NOT apply to single-value fields like 'name', 'result', or 'range'.
-- Use **C2[text]C2** for things users need to be aware of in descriptive text fields only: specific values, ranges, "not performed" tests, alerts, or changes (e.g., **C2[high thyroid hormone alert]C2**). Do NOT apply to single-value fields like 'name', 'result', or 'range'.
+- Use **C1[text]C1** for important information and key action items in descriptive text fields only: critical symptoms (e.g., **C1[fatigue]C1**), diagnoses, or main action steps (e.g., **C1[eat more fiber]C1**) within sentences. Do NOT apply to single-value fields like 'name', 'result', or 'range', or to names (e.g., do NOT use for 'Estradiol', 'Magnesium', 'DHEA, Serum'). For example, in 'detailed_biomarkers.name', use plain 'Estradiol', not '**C1[Estradiol]C1**'.
+- Use **C2[text]C2** for things users need to be aware of in descriptive text fields only: specific values, ranges, "not performed" tests, alerts, or changes (e.g., **C2[high thyroid hormone alert]C2**) within sentences. Do NOT apply to single-value fields like 'name', 'result', or 'range', or to names (e.g., do NOT use for 'DHEA, Serum'). For example, in 'crucial_biomarkers_to_measure.importance', use plain 'DHEA, Serum' in the sentence, like "Test DHEA, Serum to check stress levels because of **C1[feeling tired]C1**".
 - Apply sparingly to key terms in descriptive text fields (e.g., 'overall_summary', 'why_it_matters', 'score_rationale') for clarity (e.g., **C1[constipation]C1**, **C2[low DHEA alert]C2**).
 
 **KEY PERSONALIZATION AND SCIENTIFIC LINKING**
 - Anchor every recommendation to user input (symptom, diagnosis, biomarker) in simple terms (e.g., "For **C1[constipation]C1**, eat fiber-rich foods to help digestion").
 - Explicitly reference symptoms/diagnoses in descriptive fields (e.g., "Given **C1[stomach pain]C1**, avoid dairy").
-- For "Not Performed" biomarkers, list in 'crucial_biomarkers_to_measure' with simple explanations (e.g., "Test DHEA to check stress because of **C1[feeling tired]C1**").
+- For "Not Performed" biomarkers, list in 'crucial_biomarkers_to_measure' with simple explanations (e.g., "Test DHEA, Serum to check stress levels because of **C1[feeling tired]C1**").
 - Provide women-specific, science-backed rationale in simple language (e.g., "Fiber helps your body clear extra estrogen to ease **C1[bloating]C1**, like cleaning out clutter").
 - Use precise, clear terms (e.g., "Avoid dairy for **C1[lactose issues]C1**"). Avoid vague phrases like "some people."
 - Explain hormone interactions simply (e.g., "High cortisol, your stress alarm, can cause **C1[bloating]C1**").
@@ -140,9 +140,8 @@ Generate ONE complete JSON object following the JSON_STRUCTURE_DEFINITION below.
 **Four Pillars Scoring**
 - Score each pillar (Eat Well, Sleep Well, Move Well, Recover Well) from 1 (needs improvement) to 10 (optimal) based on user data.
 - Link scores to inputs in simple terms (e.g., "**C1[skipping meals]C1** gives Eat Well a low score of 4 because regular meals fuel your body").
-- For each pillar, provide a 'score_rationale' array with at least 2 sentences in simple language explaining why the score was given, tied to user data (e.g., "Eat Well got 4 because **C1[skipping meals]C1** means missing energy. Eating regularly helps your body stay strong.").
+- For each pillar, provide a 'score_rationale' array with at least 2 sentences in simple language explaining why the score was given, tied to user data (e.g., "Eat Well got 4 because **C1[skipping meals]C1** means missing energy. Eating regularly helps your body stay strong.")
 """
-
 # --- JSON Structure Definition ---
 JSON_STRUCTURE_DEFINITION = """
 {
@@ -157,34 +156,34 @@ JSON_STRUCTURE_DEFINITION = """
     },
     "detailed_biomarkers": [
       {
-        "name": "string - Full biomarker name (e.g., '**C1[Estradiol]C1**').",
+        "name": "string - Full biomarker name (e.g., 'Estradiol').",
         "status": "string - 'optimal', 'keep_in_mind', or 'attention_needed'.",
         "status_label": "string - Simple label (e.g., 'Good (Green)' for optimal).",
-        "result": "string - Result with units (e.g., '**C2[4.310 uIU/mL]C2**').",
-        "range": "string - Normal range (e.g., '**C2[0.450-4.500]C2**').",
+        "result": "string - Result with units (e.g., '4.310 uIU/mL').",
+        "range": "string - Normal range (e.g., '0.450-4.500').",
         "cycle_impact": "string - Explain menstrual cycle impact in simple terms in 1 sentence (e.g., 'Estradiol changes during your cycle and may affect **C1[cramps]C1**').",
-        "why_it_matters": "string - Explain biomarker's role in women’s health, linked to user data, in simple terms (e.g., 'High **C2[thyroid hormone]C2** may cause **C1[tiredness]C1**, like a slow energy engine')."
+        "why_it_matters": "string - Explain biomarker's role in women’s health, linked to user data, in simple terms (e.g., 'High thyroid hormone may cause **C1[tiredness]C1**, like a slow energy engine')."
       }
     ],
     "crucial_biomarkers_to_measure": [
       {
-        "name": "string - Biomarker name (e.g., '**C2[DHEA, Serum]C2**').",
-        "importance": "string - Simple explanation of why testing is needed (e.g., 'Test **C2[DHEA, Serum]C2** to check stress levels because of **C1[tiredness]C1**')."
+        "name": "string - Biomarker name (e.g., 'DHEA, Serum').",
+        "importance": "string - Simple explanation of why testing is needed (e.g., 'Test DHEA, Serum to check stress levels because of **C1[tiredness]C1**')."
       }
     ],
-    "health_recommendation_summary": "array of strings - Simple, actionable steps (e.g., 'Retest **C2[DHEA, Serum]C2** to understand **C1[stress]C1**')."
+    "health_recommendation_summary": "array of strings - Simple, actionable steps (e.g., 'Retest DHEA, Serum to understand **C1[stress]C1**')."
   },
   "four_pillars": {
     "introduction": "string - Summarize health status and lab findings in simple terms for the four areas (eating, sleeping, moving, recovering).",
     "pillars": [
       {
-        "name": "string - Pillar name (e.g., '**C1[Eat Well]C1**').",
-        "score": "integer - 1 (needs improvement) to 10 (great), based on user data (e.g., '**C2[4]C2** for **C1[skipping meals]C1**').",
-        "score_rationale": "array of strings - At least 2 sentences in simple language explaining why the score was given, tied to user data (e.g., ['Eat Well got **C2[4]C2** because **C1[skipping meals]C1** means missing energy.', 'Eating regularly helps your body stay strong.']).",
-        "why_it_matters": "string - Explain relevance to user data in simple terms (e.g., 'Good food helps balance **C2[hormones]C2** for **C1[bloating]C1**, like fueling a car').",
-        "personalized_recommendations": "array of strings - Simple advice (e.g., 'Eat **C1[fiber-rich vegetables]C1** for **C1[constipation]C1**').",
-        "root_cause_correlation": "string - Link to root causes in simple terms (e.g., 'Fiber helps **C1[constipation]C1** caused by **C2[low estrogen]C2**').",
-        "science_based_explanation": "string - Simple scientific basis (e.g., 'Fiber clears **C2[extra hormones]C2** to ease **C1[mood swings]C1**, like cleaning out clutter').",
+        "name": "string - Pillar name (e.g., 'Eat Well').",
+        "score": "integer - 1 (needs improvement) to 10 (great), based on user data (e.g., '4' for skipping meals).",
+        "score_rationale": "array of strings - At least 2 sentences in simple language explaining why the score was given, tied to user data (e.g., ['Eat Well got 4 because **C1[skipping meals]C1** means missing energy.', 'Eating regularly helps your body stay strong.']).",
+        "why_it_matters": "string - Explain relevance to user data in simple terms (e.g., 'Good food helps balance hormones for **C1[bloating]C1**, like fueling a car').",
+        "personalized_recommendations": "array of strings - Simple advice (e.g., 'Eat fiber-rich vegetables for **C1[constipation]C1**').",
+        "root_cause_correlation": "string - Link to root causes in simple terms (e.g., 'Fiber helps **C1[constipation]C1** caused by low estrogen').",
+        "science_based_explanation": "string - Simple scientific basis (e.g., 'Fiber clears extra hormones to ease **C1[mood swings]C1**, like cleaning out clutter').",
         "additional_guidance": {
           "description": "string - Explain guidance in simple terms, note if general due to limited data (e.g., 'No specific data given, so try these general tips for women’s health').",
           "structure": {
@@ -204,11 +203,11 @@ JSON_STRUCTURE_DEFINITION = """
     "structure": {
       "recommendations": [
         {
-          "name": "string - Supplement name (e.g., '**C1[Magnesium]C1**').",
-          "rationale": "string - Simple reason linked to data (e.g., 'For **C2[low Estradiol]C2** and **C1[mood swings]C1**, helps calm your body').",
+          "name": "string - Supplement name (e.g., 'Magnesium').",
+          "rationale": "string - Simple reason linked to data (e.g., 'For low Estradiol and **C1[mood swings]C1**, helps calm your body').",
           "expected_outcomes": "string - Simple benefits (e.g., 'Better **C1[sleep]C1**, like a restful night').",
-          "dosage_and_timing": "string - Simple dosage (e.g., '**C2[200 mg daily, evening]C2**').",
-          "situational_cyclical_considerations": "string - Simple cycle-specific advice (e.g., 'Use in **C1[second half of cycle]C1** for **C1[cramps]C1**')."
+          "dosage_and_timing": "string - Simple dosage (e.g., '200 mg daily, evening').",
+          "situational_cyclical_considerations": "string - Simple cycle-specific advice (e.g., 'Use in the second half of your cycle for **C1[cramps]C1**')."
         }
       ],
       "conclusion": "string - Encourage sticking to advice and checking with a doctor, in simple terms."
@@ -217,16 +216,15 @@ JSON_STRUCTURE_DEFINITION = """
   "action_plan": {
     "description": "string - Summarize actionable steps in simple terms (e.g., 'Here’s how to improve **C1[energy]C1** and reduce **C1[stress]C1**').",
     "structure": {
-      "foods_to_enjoy": "array of strings - Simple food advice (e.g., 'Eat **C1[vegetables]C1** for **C1[constipation]C1**').",
-      "foods_to_limit": "array of strings - Simple foods to avoid (e.g., 'Limit **C2[milk]C2** for **C1[stomach issues]C1**').",
-      "daily_habits": "array of strings - Simple habits (e.g., 'Sleep **C2[7-9 hours]C2** to balance **C1[stress]C1**').",
-      "rest_and_recovery": "array of strings - Simple recovery tips (e.g., 'Try **C1[meditation]C1** for **C1[stress]C1**').",
-      "movement": "array of strings - Simple workouts (e.g., '**C1[Yoga]C1** for **C1[stress]C1**')."
+      "foods_to_enjoy": "array of strings - Simple food advice (e.g., 'Eat vegetables for **C1[constipation]C1**').",
+      "foods_to_limit": "array of strings - Simple foods to avoid (e.g., 'Limit milk for **C1[stomach issues]C1**').",
+      "daily_habits": "array of strings - Simple habits (e.g., 'Sleep 7-9 hours to balance **C1[stress]C1**').",
+      "rest_and_recovery": "array of strings - Simple recovery tips (e.g., 'Try meditation for **C1[stress]C1**').",
+      "movement": "array of strings - Simple workouts (e.g., 'Yoga for **C1[stress]C1**')."
     }
   }
 }
 """
-
 def clean_json_string(json_string):
     """Removes markdown code blocks and illegal trailing commas."""
     if not isinstance(json_string, str):

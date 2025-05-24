@@ -92,7 +92,6 @@ generation_config = {
     "response_mime_type": "application/json"  # Ensures strict JSON
 }
 
-# --- The Main Prompt Construction ---
 BASE_PROMPT_INSTRUCTIONS = """
 Role: Bewell AI Assistant.
 Persona: Holistic women's health expert, precision medicine, functional doctor, women-focused care.
@@ -113,10 +112,10 @@ Health Assessment text:
 
 Instructions for Output:
 
-Generate ONE complete response as a JSON object adhering strictly to the JSON_STRUCTURE_DEFINITION below. Do NOT include introductory or concluding text outside the JSON. Do NOT wrap in markdown code blocks (```json ... ``` or ``` ... ```). Populate all fields based *only* on provided user data, adhering to persona, tone, and constraints. Use simple language to explain health concepts, as if speaking to someone new to health topics (e.g., "Estrogen is a hormone that helps your body with energy and mood").
+Generate ONE complete JSON object following the JSON_STRUCTURE_DEFINITION below. Do NOT include text outside the JSON. Do NOT wrap in markdown code blocks (```json ... ``` or ``` ... ```). Fill all descriptive fields with 5-7 sentences using simple, everyday words and vivid analogies. Ensure all arrays have 2+ items with detailed, beginner-friendly explanations tied to user data (symptoms, diagnoses, biomarkers). If data is missing, use general women’s health tips and note they’re general (e.g., "Since no symptoms were shared, eating colorful fruits can boost your energy like charging a battery"). Make every explanation clear, relatable, and empowering.
 
 **CRITICAL ACCURACY REQUIREMENT: BIOMARKER COUNTING**
-1. **Process All Biomarkers**: Extract all biomarkers with valid results from the lab report, identifying names, results, ranges, and statuses ("optimal", "keep_in_mind", "attention_needed"). Exclude "Not Performed" or "Request Problem" biomarkers from 'detailed_biomarkers'; list these in 'crucial_biomarkers_to_measure' with symptom-linked explanations in simple terms (e.g., "Test **C2[DHEA]C2** to check stress levels because of **C1[tiredness]C1**").
+1. **Process All Biomarkers**: Extract all biomarkers with valid results from the lab report, identifying names, results, ranges, and statuses ("optimal", "keep_in_mind", "attention_needed"). Exclude "Not Performed" or "Request Problem" biomarkers from 'detailed_biomarkers'; list these in 'crucial_biomarkers_to_measure' with symptom-linked explanations in simple terms (e.g., "Test DHEA to check stress levels because of **C1[tiredness]C1**").
 2. **Count Verification**: After generating 'detailed_biomarkers', count the total objects. Assign this to 'lab_analysis.biomarkers_tested_count'. Count biomarkers by status for 'biomarker_categories_summary'. Verify that 'optimal_count' + 'keep_in_mind_count' + 'attention_needed_count' equals 'biomarkers_tested_count'. Reprocess if counts mismatch.
 3. **Log Parsing Issues**: If lab report text is ambiguous (e.g., scanned PDFs, tables), note in 'lab_analysis.overall_summary': "Some lab results could not be read due to file issues. Recommendations use available data and health details."
 
@@ -133,27 +132,27 @@ Generate ONE complete response as a JSON object adhering strictly to the JSON_ST
 - Verify all arrays are non-empty before finalizing JSON. If user data is missing, include general examples in simple terms (e.g., "No specific symptoms given; eating vegetables supports overall health").
 
 **CRITICAL TEXT MARKING FOR HIGHLIGHTING**
-- Use **C1[text]C1** for important information and key action items: critical symptoms (e.g., **C1[fatigue]C1**), diagnoses, key biomarker names, or main action steps (e.g., **C1[eat more fiber]C1**).
-- Use **C2[text]C2** for things users need to be aware of: specific biomarker values (e.g., **C2[4.310 uIU/mL]C2**), ranges, "not performed" tests, alerts, or changes (e.g., **C2[high TSH alert]C2**).
-- Apply sparingly to key terms for clarity (e.g., **C1[constipation]C1**, **C2[low DHEA]C2**).
+- Use **C1[text]C1** for important information and key action items in descriptive text fields only: critical symptoms (e.g., **C1[fatigue]C1**), diagnoses, or main action steps (e.g., **C1[eat more fiber]C1**). Do NOT apply to single-value fields like 'name', 'result', or 'range'.
+- Use **C2[text]C2** for things users need to be aware of in descriptive text fields only: specific values, ranges, "not performed" tests, alerts, or changes (e.g., **C2[high thyroid hormone alert]C2**). Do NOT apply to single-value fields like 'name', 'result', or 'range'.
+- Apply sparingly to key terms in descriptive text fields (e.g., 'overall_summary', 'why_it_matters', 'score_rationale') for clarity (e.g., **C1[constipation]C1**, **C2[low DHEA alert]C2**).
 
 **KEY PERSONALIZATION AND SCIENTIFIC LINKING**
-- Anchor every recommendation to user input (symptom, diagnosis, biomarker) in simple terms (e.g., "For **C1[constipation]C1**, eat **C1[fiber-rich foods]C1** to help digestion").
-- Explicitly reference symptoms/diagnoses (e.g., "Given **C1[stomach pain]C1**, avoid **C2[dairy]C2**").
-- For "Not Performed" biomarkers, list in 'crucial_biomarkers_to_measure' with simple explanations (e.g., "Test **C2[DHEA]C2** to check stress because of **C1[feeling tired]C1**").
-- Provide women-specific, science-backed rationale in simple language (e.g., "Fiber helps your body clear **C2[extra estrogen]C2** to ease **C1[bloating]C1**, like cleaning out clutter").
-- Use precise, clear terms (e.g., "Avoid **C2[milk]C2** for **C1[lactose issues]C1**"). Avoid vague phrases like "some people."
-- Explain hormone interactions simply (e.g., "High **C2[cortisol]C2**, your stress alarm, can cause **C1[bloating]C1**").
+- Anchor every recommendation to user input (symptom, diagnosis, biomarker) in simple terms (e.g., "For **C1[constipation]C1**, eat fiber-rich foods to help digestion").
+- Explicitly reference symptoms/diagnoses in descriptive fields (e.g., "Given **C1[stomach pain]C1**, avoid dairy").
+- For "Not Performed" biomarkers, list in 'crucial_biomarkers_to_measure' with simple explanations (e.g., "Test DHEA to check stress because of **C1[feeling tired]C1**").
+- Provide women-specific, science-backed rationale in simple language (e.g., "Fiber helps your body clear extra estrogen to ease **C1[bloating]C1**, like cleaning out clutter").
+- Use precise, clear terms (e.g., "Avoid dairy for **C1[lactose issues]C1**"). Avoid vague phrases like "some people."
+- Explain hormone interactions simply (e.g., "High cortisol, your stress alarm, can cause **C1[bloating]C1**").
 
 **Conditional Analysis**
-- **With Lab Report**: Analyze all valid biomarkers, categorize by status, link to symptoms/diagnoses in simple terms (e.g., "High **C2[thyroid hormone]C2** may mean your thyroid is slow, causing **C1[tiredness]C1**").
-- **Without Lab Report**: Use health assessment only. Recommend biomarkers to test in simple terms (e.g., "For **C1[tiredness]C1**, test **C2[thyroid hormones]C2** to check your energy engine").
+- **With Lab Report**: Analyze all valid biomarkers, categorize by status, link to symptoms/diagnoses in simple terms (e.g., "High thyroid hormone may mean your thyroid is slow, causing **C1[tiredness]C1**").
+- **Without Lab Report**: Use health assessment only. Recommend biomarkers to test in simple terms (e.g., "For **C1[tiredness]C1**, test thyroid hormones to check your energy engine").
 - Populate arrays with relevant items. If data is insufficient, use general women’s health guidance, noting it’s general (e.g., "No symptoms given, so try walking for health").
 
 **Four Pillars Scoring**
 - Score each pillar (Eat Well, Sleep Well, Move Well, Recover Well) from 1 (needs improvement) to 10 (optimal) based on user data.
-- Link scores to inputs in simple terms (e.g., "**C1[skipping meals]C1** gives Eat Well a low score of **C2[4]C2** because regular meals fuel your body").
-- For each pillar, provide a 'score_rationale' array with at least 2 sentences in simple language explaining why the score was given, tied to user data (e.g., "Eat Well got **C2[4]C2** because **C1[skipping meals]C1** means missing energy. Eating regularly helps your body stay strong.").
+- Link scores to inputs in simple terms (e.g., "**C1[skipping meals]C1** gives Eat Well a low score of 4 because regular meals fuel your body").
+- For each pillar, provide a 'score_rationale' array with at least 2 sentences in simple language explaining why the score was given, tied to user data (e.g., "Eat Well got 4 because **C1[skipping meals]C1** means missing energy. Eating regularly helps your body stay strong.").
 """
 
 # --- JSON Structure Definition ---
@@ -175,7 +174,7 @@ JSON_STRUCTURE_DEFINITION = """
         "status_label": "string - Simple label (e.g., 'Good (Green)' for optimal).",
         "result": "string - Result with units (e.g., '**C2[4.310 uIU/mL]C2**').",
         "range": "string - Normal range (e.g., '**C2[0.450-4.500]C2**').",
-        "cycle_impact": "string - Explain menstrual cycle impact in simple terms or state 'Does not usually change with cycle' (e.g., 'Estradiol changes during your cycle and may affect **C1[cramps]C1**').",
+        "cycle_impact": "string - Explain menstrual cycle impact in simple terms in 1 sentence (e.g., 'Estradiol changes during your cycle and may affect **C1[cramps]C1**').",
         "why_it_matters": "string - Explain biomarker's role in women’s health, linked to user data, in simple terms (e.g., 'High **C2[thyroid hormone]C2** may cause **C1[tiredness]C1**, like a slow energy engine')."
       }
     ],

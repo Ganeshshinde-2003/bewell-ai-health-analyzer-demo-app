@@ -114,6 +114,13 @@ Objective: Generate a comprehensive, personalized, and science-backed monthly he
 Instructions for Output:
 Generate ONE complete response as a JSON object. Do NOT include any introductory or concluding text outside the JSON object. **Do NOT wrap the JSON object in markdown code blocks (```json ... ``` or ``` ... ```).** Populate all fields based *only* on the provided user data.
 
+**CRITICAL TEXT MARKING FOR HIGHLIGHTING**
+- Use **C1[text]C1** for critical information and key action items in descriptive text fields only: critical symptoms (e.g., **C1[fatigue]C1**, **C1[mood swings]C1**), diagnoses, or main action steps (e.g., **C1[eat more fiber]C1**, **C1[prioritize sleep]C1**) within sentences. 
+- Use **C2[text]C2** for things you need to be aware of in descriptive text fields only: specific values, ranges, alerts, or changes (e.g., **C2[high thyroid hormone alert]C2**, **C2[low DHEA alert]C2**) within sentences.
+- Apply highlighting **only** to the following descriptive text fields: 'summary', 'health_reflection', 'score_or_message', 'tied_to_logs', 'likely_root_causes', 'Guidance' (in all pillars), 'explanation' (in root_cause_tags), 'food_to_enjoy', 'food_to_limit', 'rest_and_recovery', 'daily_habits', 'movements', 'behavior_goals', 'encouragement_message'. 
+- **Do NOT** apply highlighting to: 'top_symptoms', 'did_well', 'areas_to_improve', 'recommendations' (in all pillars), 'tag' (in root_cause_tags), or any single-value fields like 'name', 'result', 'range', or biomarker names (e.g., do NOT use for 'Estradiol', 'Magnesium', 'DHEA, Serum'). For example, in 'crucial_biomarkers_to_measure.importance', use plain 'DHEA, Serum' in the sentence, like 'Test DHEA, Serum to check your stress levels because you feel **C1[tired]C1**'.
+- Apply sparingly to key terms for clarity (e.g., **C1[constipation]C1**, **C2[low DHEA alert]C2**), especially in 'summary' to highlight critical trends and alerts.
+
 **Understanding the Daily Logs Structure (crucial for accurate analysis):**
 The daily logs will contain two main sections with specific columns:
 
@@ -142,12 +149,12 @@ The daily logs will contain two main sections with specific columns:
 
 **For 'hormonal_balance_insight' section:**
 * Analyze the user's daily logs, *specifically looking at the `Earning Balance` and `Losing Balance` columns* for direct indicators of hormonal impact. Also consider the `Feeling` column for qualitative input on balance.
-* The `score_or_message` field must always provide a relevant, non-empty assessment of their hormonal balance status based on this analysis. It should *not* be "0" or generic if relevant data is present.
-* When populating `tied_to_logs` and `likely_root_causes`, **explicitly mention how specific actions or patterns within the 'Sleep Well', 'Move Well', 'Eat Well', and 'Recover Well' pillars (derived from the `Category` column and associated entries like `Time`, `Feeling`, `Earning Balance`, `Losing Balance`) contributed to (or detracted from) hormonal balance.** For example, 'short sleep duration (Sleep Well) on average X hours, contributing to losing balance' or 'regular mindful eating (Eat Well) from the `Earning Balance` column'.
-* Identify `likely_root_causes` based on patterns observed across all data, linking them to specific pillars and `Losing Balance` factors where relevant.
+* The `score_or_message` field must always provide a relevant, non-empty assessment of their hormonal balance status based on this analysis, e.g., '**C1[Balanced]C1**' or '**C1[Needs Attention]C1** due to **C2[high stress levels]C2**'.
+* When populating `tied_to_logs` and `likely_root_causes`, **explicitly mention how specific actions or patterns within the 'Sleep Well', 'Move Well', 'Eat Well', and 'Recover Well' pillars (derived from the `Category` column and associated entries like `Time`, `Feeling`, `Earning Balance`, `Losing Balance`) contributed to (or detracted from) hormonal balance.** For example, '**C1[short sleep duration]C1** (Sleep Well) on average **C2[5.5 hours]C2**, contributing to losing balance' or 'regular **C1[mindful eating]C1** (Eat Well) from the `Earning Balance` column'.
+* Identify `likely_root_causes` based on patterns observed across all data, linking them to specific pillars and `Losing Balance` factors where relevant, e.g., '**C2[high stress]C2** from Recover Well noted in Losing Balance'.
 
 **For 'monthly_overview_summary' and 'top_symptoms':**
-* Utilize the `Mood`, `Symptoms`, and `Energy Level` columns from the "Logged Symptoms" section to populate `top_symptoms` and inform the `summary` and `health_reflection`.
+* Utilize the `Mood`, `Symptoms`, and `Energy Level` columns from the "Logged Symptoms" section to populate `top_symptoms` (without highlighting) and inform the `summary` and `health_reflection`. For `summary`, highlight critical trends like '**C1[fatigue]C1**' or alerts like '**C2[irregular sleep patterns]C2**'.
 
 Here is the required JSON object structure:
 """
@@ -155,76 +162,76 @@ Here is the required JSON object structure:
 MONTHLY_REPORT_JSON_STRUCTURE = """
 {
   "monthly_overview_summary": {
-    "summary": "string - A clear overview of your health trends this month, like how much you slept on average, your stress levels, and your typical movement patterns.",
-    "top_symptoms": "array of strings - The top 3-5 symptoms you reported most often this month.",
-    "health_reflection": "string - A reflection on how your health improved or fluctuated based on what you logged, like boosts in energy or changes in symptoms."
+    "summary": "string - A clear overview of your health trends this month, like how much you slept on average, your stress levels, and your typical movement patterns. Highlight critical trends like **C1[low energy]C1** or alerts like **C2[irregular sleep patterns]C2**.",
+    "top_symptoms": "array of strings - The top 3-5 symptoms you reported most often this month, e.g., ['fatigue', 'mood swings', 'headaches'].",
+    "health_reflection": "string - A reflection on how your health improved or fluctuated based on what you logged, like boosts in energy or changes in **C1[symptoms]C1** such as **C2[reduced fatigue]C2**."
   },
   "hormonal_balance_insight": {
-    "score_or_message": "string - Your overall hormonal balance status, like 'Balanced', 'Slightly Imbalanced', 'At Risk', or 'Needs Attention', based on your logs, especially what you noted in 'Earning Balance' and 'Losing Balance'.",
-    "tied_to_logs": "array of strings - How your status connects to specific logs, like short sleep hours in 'Sleep Well' from 'Losing Balance' or consistent mindful eating in 'Eat Well' from 'Earning Balance'.",
-    "likely_root_causes": "array of strings - 1-2 likely causes of hormonal changes based on your logs, like high stress from 'Recover Well' noted in 'Losing Balance' or irregular meal timing in 'Eat Well' from your 'Feeling' notes."
+    "score_or_message": "string - Your overall hormonal balance status, like '**C1[Balanced]C1**', '**C1[Slightly Imbalanced]C1**', '**C1[At Risk]C1**', or '**C1[Needs Attention]C1**', based on your logs, especially what you noted in 'Earning Balance' and 'Losing Balance'.",
+    "tied_to_logs": "array of strings - How your status connects to specific logs, like '**C1[short sleep hours]C1** in Sleep Well from Losing Balance (**C2[5.5 hours average]C2**)' or 'consistent **C1[mindful eating]C1** in Eat Well from Earning Balance'.",
+    "likely_root_causes": "array of strings - 1-2 likely causes of hormonal changes based on your logs, like '**C2[high stress]C2** from Recover Well noted in Losing Balance' or '**C1[irregular meal timing]C1** in Eat Well from your Feeling notes'."
   },
   "logged_patterns": {
     "eat_well": {
-      "did_well": "array of strings - Things you nailed in the 'Eat Well' pillar, like eating whole foods consistently or sticking to regular meal times.",
-      "areas_to_improve": "array of strings - Areas to work on in the 'Eat Well' pillar, like cutting back on processed foods or not skipping meals.",
-      "recommendations": "array of strings - Simple, actionable tips based on your eating logs.",
-      "Guidance": "array of strings - 2-4 sentences offering practical advice to enhance your eating habits, like 'Try adding a variety of colorful vegetables to your meals to boost nutrient intake.' or 'Plan your meals ahead to avoid skipping them on busy days.'",
+      "did_well": "array of strings - Things you nailed in the Eat Well pillar, like 'eating whole foods consistently' or 'sticking to regular meal times'.",
+      "areas_to_improve": "array of strings - Areas to work on in the Eat Well pillar, like 'cutting back on processed foods' or 'not skipping meals'.",
+      "recommendations": "array of strings - Simple, actionable tips based on your eating logs, e.g., 'add more fiber to support digestion'.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to enhance your eating habits, like 'Try adding a variety of **C1[colorful vegetables]C1** to your meals to boost nutrient intake.' or 'Plan your meals ahead to avoid **C1[skipping them]C1** on busy days.'",
       "metrics": {
-        "days_logged": "number - Total days you logged 'Eat Well' data.",
-        "average_meal_satisfaction_score": "number (0-5) - Your average satisfaction with meals, inferred from your 'Feeling' notes if no score is given (e.g., 3.5).",
+        "days_logged": "number - Total days you logged Eat Well data.",
+        "average_meal_satisfaction_score": "number (0-5) - Your average satisfaction with meals, inferred from your Feeling notes if no score is given (e.g., 3.5).",
         "processed_food_days_percentage": "number (0-100) - Percentage of days you noted processed food, inferred from your logs if not explicit (e.g., 40)."
       }
     },
     "sleep_well": {
-      "did_well": "array of strings - What you did great in the 'Sleep Well' pillar, like keeping a consistent bedtime or getting enough sleep most nights.",
-      "areas_to_improve": "array of strings - Areas to improve in 'Sleep Well', like reducing late-night screen time or avoiding alcohol before bed.",
-      "recommendations": "array of strings - Simple, actionable tips based on your sleep logs.",
-      "Guidance": "array of strings - 2-4 sentences offering practical advice to improve your sleep, like 'Set a consistent bedtime routine to signal your body it’s time to rest.' or 'Limit screen time an hour before bed to improve sleep quality.'",
+      "did_well": "array of strings - What you did great in the Sleep Well pillar, like 'keeping a consistent bedtime' or 'getting enough sleep most nights'.",
+      "areas_to_improve": "array of strings - Areas to improve in Sleep Well, like 'reducing late-night screen time' or 'avoiding alcohol before bed'.",
+      "recommendations": "array of strings - Simple, actionable tips based on your sleep logs, e.g., 'set a consistent bedtime'.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to improve your sleep, like 'Set a **C1[consistent bedtime routine]C1** to signal your body it’s time to rest.' or 'Limit **C1[screen time]C1** an hour before bed to improve **C2[sleep quality]C2**.'",
       "metrics": {
-        "days_logged": "number - Total days you logged 'Sleep Well' data.",
-        "average_sleep_quality_score": "number (0-5) - Your average sleep quality, inferred from 'Feeling' or 'Earning Balance' if no score is given (e.g., 4.2).",
-        "average_sleep_hours": "number - Your average sleep hours per night, taken from the 'Time' column (e.g., 6.8).",
+        "days_logged": "number - Total days you logged Sleep Well data.",
+        "average_sleep_quality_score": "number (0-5) - Your average sleep quality, inferred from Feeling or Earning Balance if no score is given (e.g., 4.2).",
+        "average_sleep_hours": "number - Your average sleep hours per night, taken from the Time column (e.g., 6.8).",
         "consistent_bedtime_percentage": "number (0-100) - Percentage of days with consistent bed/wake times, inferred from your logs if not explicit (e.g., 75)."
       }
     },
     "move_well": {
-      "did_well": "array of strings - What you excelled at in the 'Move Well' pillar, like regular walks or adding strength training.",
-      "areas_to_improve": "array of strings - Areas to work on in 'Move Well', like sitting too long or not exercising consistently.",
-      "recommendations": "array of strings - Simple, actionable tips based on your movement logs.",
-      "Guidance": "array of strings - 2-4 sentences offering practical advice to enhance your movement, like 'Incorporate short walks during your workday to reduce sedentary time.' or 'Try a weekly yoga session to improve flexibility and reduce stress.'",
+      "did_well": "array of strings - What you excelled at in the Move Well pillar, like 'regular walks' or 'adding strength training'.",
+      "areas_to_improve": "array of strings - Areas to work on in Move Well, like 'sitting too long' or 'not exercising consistently'.",
+      "recommendations": "array of strings - Simple, actionable tips based on your movement logs, e.g., 'add short walks'.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to enhance your movement, like 'Incorporate **C1[short walks]C1** during your workday to reduce **C2[sedentary time]C2**.' or 'Try a weekly **C1[yoga session]C1** to improve flexibility and reduce **C1[stress]C1**.'",
       "metrics": {
-        "days_logged": "number - Total days you logged 'Move Well' data.",
+        "days_logged": "number - Total days you logged Move Well data.",
         "activity_days_percentage": "number (0-100) - Percentage of days you logged activity, inferred from your logs if not explicit (e.g., 60).",
         "average_activity_intensity_score": "number (0-5) - Your average workout intensity, inferred from your logs if no score is given (e.g., 3)."
       }
     },
     "recover_well": {
-      "did_well": "array of strings - Things you did well in the 'Recover Well' pillar, like meditating regularly or taking work breaks.",
-      "areas_to_improve": "array of strings - Areas to improve in 'Recover Well', like managing high stress or cutting back on social media.",
-      "recommendations": "array of strings - Simple, actionable tips based on your recovery logs.",
-      "Guidance": "array of strings - 2-4 sentences offering practical advice to boost your recovery, like 'Schedule short breaks during your day to recharge and lower stress.' or 'Try a 5-minute breathing exercise to manage anxiety.'",
+      "did_well": "array of strings - Things you did well in the Recover Well pillar, like 'meditating regularly' or 'taking work breaks'.",
+      "areas_to_improve": "array of strings - Areas to improve in Recover Well, like 'managing high stress' or 'cutting back on social media'.",
+      "recommendations": "array of strings - Simple, actionable tips based on your recovery logs, e.g., 'try 5-minute breathing exercises'.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to boost your recovery, like 'Schedule **C1[short breaks]C1** during your day to recharge and lower **C1[stress]C1**.' or 'Try a **C1[5-minute breathing exercise]C1** to manage **C2[anxiety]C2**.'",
       "metrics": {
-        "days_logged": "number - Total days you logged 'Recover Well' data.",
-        "average_stress_level_score": "number (0-5) - Your average stress level, inferred from 'Feeling' or 'Mood' if no score is given (e.g., 3.8).",
+        "days_logged": "number - Total days you logged Recover Well data.",
+        "average_stress_level_score": "number (0-5) - Your average stress level, inferred from Feeling or Mood if no score is given (e.g., 3.8).",
         "recovery_activity_days_percentage": "number (0-100) - Percentage of days you noted recovery activities, inferred from your logs if not explicit (e.g., 50)."
       }
     }
   },
   "root_cause_tags": [
     {
-      "tag": "string - e.g., '🧠 Stress-related hormonal disruption', '⚖️ Blood sugar instability', '🔥 Inflammatory response'",
-      "explanation": "string - A sentence explaining how your routines contributed to this pattern."
+      "tag": "string - e.g., 'Stress-related hormonal disruption', 'Blood sugar instability', 'Inflammatory response'",
+      "explanation": "string - A sentence explaining how your routines contributed to this pattern, e.g., 'Your **C1[high stress]C1** from Recover Well logs led to **C2[hormonal disruption]C2**.'"
     }
   ],
   "actionable_next_steps": {
-    "food_to_enjoy": "array of strings - Specific foods or eating habits to embrace based on your logs, like 'leafy greens for nutrient density' or 'healthy fats like avocado to support hormonal balance'.",
-    "food_to_limit": "array of strings - Foods or eating habits to cut back on based on your logs, like 'sugary snacks to stabilize blood sugar' or 'excessive caffeine to reduce anxiety'.",
-    "rest_and_recovery": "array of strings - Actions to prioritize for rest and recovery based on your logs, like 'try 10-minute daily meditation' or 'schedule downtime to lower stress'.",
-    "daily_habits": "array of strings - Small daily habits to build based on your logs, like 'drink water first thing in the morning' or 'set a consistent bedtime routine'.",
-    "movements": "array of strings - Movement practices to incorporate based on your logs, like 'add 15-minute daily walks' or 'try low-impact yoga for flexibility'.",
-    "behavior_goals": "array of strings - Your top 3 behavior goals based on your logs, like 'get 7-8 hours of sleep nightly' or 'eat meals at regular times to balance insulin'.",
-    "encouragement_message": "string - A motivating note to keep you going, like 'You're making great strides—keep prioritizing your health!'"
+    "food_to_enjoy": "array of strings - Specific foods or eating habits to embrace based on your logs, like '**C1[leafy greens]C1** for nutrient density' or '**C1[healthy fats like avocado]C1** to support hormonal balance'.",
+    "food_to_limit": "array of strings - Foods or eating habits to cut back on based on your logs, like '**C1[sugary snacks]C1** to stabilize **C2[blood sugar]C2**' or '**C1[excessive caffeine]C1** to reduce **C2[anxiety]C2**'.",
+    "rest_and_recovery": "array of strings - Actions to prioritize for rest and recovery based on your logs, like '**C1[try 10-minute daily meditation]C1**' or '**C1[schedule downtime]C1** to lower **C2[stress]C2**'.",
+    "daily_habits": "array of strings - Small daily habits to build based on your logs, like '**C1[drink water first thing in the morning]C1**' or '**C1[set a consistent bedtime routine]C1**'.",
+    "movements": "array of strings - Movement practices to incorporate based on your logs, like '**C1[add 15-minute daily walks]C1**' or '**C1[try low-impact yoga]C1** for flexibility'.",
+    "behavior_goals": "array of strings - Your top 3 behavior goals based on your logs, like '**C1[get 7-8 hours of sleep nightly]C1**' or '**C1[eat meals at regular times]C1** to balance **C2[insulin]C2**'.",
+    "encouragement_message": "string - A motivating note to keep you going, like 'You're making great strides—keep prioritizing your **C1[health]C1**!'"
   }
 }
 """

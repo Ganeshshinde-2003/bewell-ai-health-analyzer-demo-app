@@ -6,27 +6,25 @@ import pandas as pd  # for Excel and CSV
 from docx import Document  # for .docx files
 import json
 import re
+import argparse
+import getpass
 
 # --- Text Extraction Function (Handles multiple file types) ---
 def extract_text_from_file(file_path):
     """
     Extracts text content from various file types (PDF, DOCX, XLSX, XLS, TXT, CSV)
-    from a given file path.
+    from a file path.
     Returns extracted text as a string or an error marker.
     """
-    if not file_path:
+    if not file_path or not os.path.exists(file_path):
         return ""
-
-    if not os.path.exists(file_path):
-        print(f"Error: File not found at {file_path}")
-        return f"[Error: File not found at {file_path}]"
 
     file_extension = os.path.splitext(file_path)[1].lower()
     text = ""
 
     try:
-        with open(file_path, 'rb') as f:
-            file_bytes = f.read()
+        with open(file_path, 'rb') as file:
+            file_bytes = file.read()
 
         if file_extension == ".pdf":
             try:
@@ -36,7 +34,7 @@ def extract_text_from_file(file_path):
                     text += page.get_text("text") + "\n"
                 pdf_document.close()
             except Exception as e:
-                print(f"Error processing PDF file '{file_path}': {e}")
+                print(f"Error processing PDF file: {e}")
                 return "[Error Processing PDF File]"
 
         elif file_extension == ".docx":
@@ -45,7 +43,7 @@ def extract_text_from_file(file_path):
                 for para in doc.paragraphs:
                     text += para.text + "\n"
             except Exception as e:
-                print(f"Error processing DOCX file '{file_path}': {e}")
+                print(f"Error processing DOCX file: {e}")
                 return "[Error Processing DOCX File]"
 
         elif file_extension in [".xlsx", ".xls"]:
@@ -55,14 +53,14 @@ def extract_text_from_file(file_path):
                     text += f"--- Sheet: {sheet_name} ---\n"
                     text += df.to_string(index=False) + "\n\n"
             except Exception as excel_e:
-                print(f"Warning: Could not read Excel file '{file_path}'. Ensure 'openpyxl' (for .xlsx) or 'xlrd' (for .xls) is installed if needed. Error: {excel_e}")
+                print(f"Could not read Excel file '{file_path}'. Ensure 'openpyxl' (for .xlsx) or 'xlrd' (for .xls) is installed if needed. Error: {excel_e}")
                 return f"[Could not automatically process Excel file {file_path} - Please try pasting the text or saving as PDF/TXT.]"
 
         elif file_extension in [".txt", ".csv"]:
             text = file_bytes.decode('utf-8', errors='ignore')
 
         else:
-            print(f"Warning: Unsupported file type: {file_extension} for file '{file_path}'")
+            print(f"Unsupported file type: {file_extension} for file '{file_path}'")
             return "[Unsupported File Type]"
 
     except Exception as e:
@@ -70,24 +68,19 @@ def extract_text_from_file(file_path):
         return "[Error Processing File]"
 
     if not text.strip() and file_extension not in [".txt", ".csv"] and not text.startswith("["):
-        print(f"Warning: No readable text extracted from '{file_path}'. The file might be scanned, empty, or have complex formatting. Consider checking the file.")
-
+        print(f"No readable text extracted from '{file_path}'. The file might be scanned, empty, or have complex formatting. Consider pasting the text manually.")
+    
     return text
 
-# --- API Key Handling ---
-# For a plain script, you can set it directly or load from an environment variable.
-# DO NOT hardcode your API key in a production application. Use environment variables.
-api_key = "AIzaSyArQ9zeya1SO-IwsMappkLStXYT0W7WXfk" # Replace with your actual API key or load from os.getenv("GOOGLE_API_KEY")
-
 # --- Gemini Model Configuration ---
-model_name = "gemini-2.0-flash" # Use a fast model for this purpose
+model_name = "gemini-2.0-flash"
 
 generation_config = {
     "temperature": 0.7,
     "top_p": 0.95,
     "top_k": 64,
     "max_output_tokens": 8192,
-    "response_mime_type": "text/plain", # Request text/plain, but instruct AI to return JSON
+    "response_mime_type": "text/plain",
 }
 
 # --- The Main Prompt Construction for Monthly Report ---
@@ -144,69 +137,76 @@ Here is the required JSON object structure:
 MONTHLY_REPORT_JSON_STRUCTURE = """
 {
   "monthly_overview_summary": {
-    "summary": "string - Comprehensive summary of this month’s health trends. Mention key routines (e.g., average sleep duration, general stress level, typical movement patterns).",
-    "top_symptoms": "array of strings - List the top 3-5 most reported symptoms this month.",
-    "health_reflection": "string - Reflection on health gains or fluctuations based on the user's inputs (e.g., improvements in energy, increase in specific symptoms)."
+    "summary": "string - A clear overview of your health trends this month, like how much you slept on average, your stress levels, and your typical movement patterns.",
+    "top_symptoms": "array of strings - The top 3-5 symptoms you reported most often this month.",
+    "health_reflection": "string - A reflection on how your health improved or fluctuated based on what you logged, like boosts in energy or changes in symptoms."
   },
   "hormonal_balance_insight": {
-    "score_or_message": "string - Overall hormonal balance status or message (e.g., 'Balanced', 'Slightly Imbalanced', 'At Risk', 'Needs Attention'). This should be a meaningful assessment based on the provided logs, especially 'Earning Balance' and 'Losing Balance' entries.",
-    "tied_to_logs": "array of strings - Explain how this status is tied to specific logged data, explicitly referencing pillars like 'Sleep Well', 'Move Well', 'Eat Well', 'Recover Well' and factors from 'Earning Balance'/'Losing Balance' columns (e.g., 'short sleep duration (Sleep Well) on average X hours, noted under Losing Balance', 'consistent mindful eating (Eat Well) reported under Earning Balance').",
-    "likely_root_causes": "array of strings - List 1-2 likely hormonal root causes identified from the logs, referencing associated pillars and 'Losing Balance' factors (e.g., 'high cortisol due to chronic stress (Recover Well), often noted in Losing Balance', 'insulin swings from inconsistent meal timing (Eat Well), possibly linked to 'Feeling' column entries')."
+    "score_or_message": "string - Your overall hormonal balance status, like 'Balanced', 'Slightly Imbalanced', 'At Risk', or 'Needs Attention', based on your logs, especially what you noted in 'Earning Balance' and 'Losing Balance'.",
+    "tied_to_logs": "array of strings - How your status connects to specific logs, like short sleep hours in 'Sleep Well' from 'Losing Balance' or consistent mindful eating in 'Eat Well' from 'Earning Balance'.",
+    "likely_root_causes": "array of strings - 1-2 likely causes of hormonal changes based on your logs, like high stress from 'Recover Well' noted in 'Losing Balance' or irregular meal timing in 'Eat Well' from your 'Feeling' notes."
   },
   "logged_patterns": {
     "eat_well": {
-      "did_well": "array of strings - Summarize what the user did well in the 'Eat Well' pillar (e.g., 'consistent whole food intake', 'regular meal timing', 'adequate hydration').",
-      "areas_to_improve": "array of strings - Mention areas for improvement in the 'Eat Well' pillar (e.g., 'frequent consumption of processed foods', 'skipping meals', 'excessive caffeine intake').",
-      "recommendations": "array of strings - Offer short, actionable recommendations based on real logs for this pillar.",
+      "did_well": "array of strings - Things you nailed in the 'Eat Well' pillar, like eating whole foods consistently or sticking to regular meal times.",
+      "areas_to_improve": "array of strings - Areas to work on in the 'Eat Well' pillar, like cutting back on processed foods or not skipping meals.",
+      "recommendations": "array of strings - Simple, actionable tips based on your eating logs.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to enhance your eating habits, like 'Try adding a variety of colorful vegetables to your meals to boost nutrient intake.' or 'Plan your meals ahead to avoid skipping them on busy days.'",
       "metrics": {
-        "days_logged": "number - Total days Eat Well data was logged.",
-        "average_meal_satisfaction_score": "number (0-5, or similar scale) - Average satisfaction with meals, *inferred from qualitative descriptions like 'Feeling' if no explicit score is given* (e.g., 3.5).",
-        "processed_food_days_percentage": "number (0-100) - Percentage of days processed food consumption was noted, *inferred from relevant qualitative descriptions if no explicit data is given* (e.g., 40)."
+        "days_logged": "number - Total days you logged 'Eat Well' data.",
+        "average_meal_satisfaction_score": "number (0-5) - Your average satisfaction with meals, inferred from your 'Feeling' notes if no score is given (e.g., 3.5).",
+        "processed_food_days_percentage": "number (0-100) - Percentage of days you noted processed food, inferred from your logs if not explicit (e.g., 40)."
       }
     },
     "sleep_well": {
-      "did_well": "array of strings - Summarize what the user did well in the 'Sleep Well' pillar (e.g., 'consistent bedtime routine', 'adequate sleep duration on most nights').",
-      "areas_to_improve": "array of strings - Mention areas for improvement in the 'Sleep Well' pillar (e.g., 'late-night screen exposure', 'inconsistent sleep schedule', 'alcohol before bed').",
-      "recommendations": "array of strings - Offer short, actionable recommendations based on real logs for this pillar.",
+      "did_well": "array of strings - What you did great in the 'Sleep Well' pillar, like keeping a consistent bedtime or getting enough sleep most nights.",
+      "areas_to_improve": "array of strings - Areas to improve in 'Sleep Well', like reducing late-night screen time or avoiding alcohol before bed.",
+      "recommendations": "array of strings - Simple, actionable tips based on your sleep logs.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to improve your sleep, like 'Set a consistent bedtime routine to signal your body it’s time to rest.' or 'Limit screen time an hour before bed to improve sleep quality.'",
       "metrics": {
-        "days_logged": "number - Total days Sleep Well data was logged.",
-        "average_sleep_quality_score": "number (0-5, or similar scale) - Average sleep quality, *inferred from qualitative descriptions like 'Feeling' or 'Earning Balance' if no explicit score is given* (e.g., 4.2).",
-        "average_sleep_hours": "number - Average hours of sleep per night, *extracted directly from provided numerical columns/entries, specifically the 'Time' column* (e.g., 6.8).",
-        "consistent_bedtime_percentage": "number (0-100) - Percentage of days with consistent bed/wake times, *inferred from qualitative descriptions or time patterns if no explicit data is given* (e.g., 75)."
+        "days_logged": "number - Total days you logged 'Sleep Well' data.",
+        "average_sleep_quality_score": "number (0-5) - Your average sleep quality, inferred from 'Feeling' or 'Earning Balance' if no score is given (e.g., 4.2).",
+        "average_sleep_hours": "number - Your average sleep hours per night, taken from the 'Time' column (e.g., 6.8).",
+        "consistent_bedtime_percentage": "number (0-100) - Percentage of days with consistent bed/wake times, inferred from your logs if not explicit (e.g., 75)."
       }
     },
     "move_well": {
-      "did_well": "array of strings - Summarize what the user did well in the 'Move Well' pillar (e.g., 'regular walks', 'incorporation of strength training').",
-      "areas_to_improve": "array of strings - Mention areas for improvement in the 'Move Well' pillar (e.g., 'prolonged sitting', 'lack of consistent exercise', 'over-exercising').",
-      "recommendations": "array of strings - Offer short, actionable recommendations based on real logs for this pillar.",
+      "did_well": "array of strings - What you excelled at in the 'Move Well' pillar, like regular walks or adding strength training.",
+      "areas_to_improve": "array of strings - Areas to work on in 'Move Well', like sitting too long or not exercising consistently.",
+      "recommendations": "array of strings - Simple, actionable tips based on your movement logs.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to enhance your movement, like 'Incorporate short walks during your workday to reduce sedentary time.' or 'Try a weekly yoga session to improve flexibility and reduce stress.'",
       "metrics": {
-        "days_logged": "number - Total days Move Well data was logged.",
-        "activity_days_percentage": "number (0-100) - Percentage of days activity was logged, *inferred from relevant qualitative descriptions if no explicit data is given* (e.g., 60).",
-        "average_activity_intensity_score": "number (0-5, or similar scale) - Average intensity of workouts, *inferred from qualitative descriptions if no explicit score is given* (e.g., 3)."
+        "days_logged": "number - Total days you logged 'Move Well' data.",
+        "activity_days_percentage": "number (0-100) - Percentage of days you logged activity, inferred from your logs if not explicit (e.g., 60).",
+        "average_activity_intensity_score": "number (0-5) - Your average workout intensity, inferred from your logs if no score is given (e.g., 3)."
       }
     },
     "recover_well": {
-      "did_well": "array of strings - Summarize what the user did well in the 'Recover Well' pillar (e.g., 'regular meditation', 'taking breaks during work').",
-      "areas_to_improve": "array of strings - Mention areas for improvement in the 'Recover Well' pillar (e.g., 'high stress levels', 'overuse of social media', 'isolating from social connections').",
-      "recommendations": "array of strings - Offer short, actionable recommendations based on real logs for this pillar.",
+      "did_well": "array of strings - Things you did well in the 'Recover Well' pillar, like meditating regularly or taking work breaks.",
+      "areas_to_improve": "array of strings - Areas to improve in 'Recover Well', like managing high stress or cutting back on social media.",
+      "recommendations": "array of strings - Simple, actionable tips based on your recovery logs.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to boost your recovery, like 'Schedule short breaks during your day to recharge and lower stress.' or 'Try a 5-minute breathing exercise to manage anxiety.'",
       "metrics": {
-        "days_logged": "number - Total days Recover Well data was logged.",
-        "average_stress_level_score": "number (0-5, or similar scale) - Average reported stress level, *inferred from qualitative descriptions like 'Feeling' or 'Mood' if no explicit score is given* (e.g., 3.8).",
-        "recovery_activity_days_percentage": "number (0-100) - Percentage of days recovery activity was noted, *inferred from relevant qualitative descriptions if no explicit data is given* (e.g., 50)."
+        "days_logged": "number - Total days you logged 'Recover Well' data.",
+        "average_stress_level_score": "number (0-5) - Your average stress level, inferred from 'Feeling' or 'Mood' if no score is given (e.g., 3.8).",
+        "recovery_activity_days_percentage": "number (0-100) - Percentage of days you noted recovery activities, inferred from your logs if not explicit (e.g., 50)."
       }
     }
   },
   "root_cause_tags": [
-    // array of objects - Based on logs and symptoms, tag their status and explain contribution.
-    // Each object in this array should have the following structure:
-    // {
-    //   "tag": "string - e.g., '🧠 Stress-related hormonal disruption', '⚖️ Blood sugar instability', '🔥 Inflammatory response'",
-    //   "explanation": "string - A sentence explaining how their routines contributed to that pattern."
-    // }
+    {
+      "tag": "string - e.g., '🧠 Stress-related hormonal disruption', '⚖️ Blood sugar instability', '🔥 Inflammatory response'",
+      "explanation": "string - A sentence explaining how your routines contributed to this pattern."
+    }
   ],
   "actionable_next_steps": {
-    "behavior_goals": "array of strings - Top 3 behavior goals personalized to their logs (e.g., 'improve sleep consistency by X hours', 'regulate meal timing to reduce insulin spikes', 'reduce caffeine intake to minimize anxiety').",
-    "encouragement_message": "string - One encouraging sentence to motivate progress."
+    "food_to_enjoy": "array of strings - Specific foods or eating habits to embrace based on your logs, like 'leafy greens for nutrient density' or 'healthy fats like avocado to support hormonal balance'.",
+    "food_to_limit": "array of strings - Foods or eating habits to cut back on based on your logs, like 'sugary snacks to stabilize blood sugar' or 'excessive caffeine to reduce anxiety'.",
+    "rest_and_recovery": "array of strings - Actions to prioritize for rest and recovery based on your logs, like 'try 10-minute daily meditation' or 'schedule downtime to lower stress'.",
+    "daily_habits": "array of strings - Small daily habits to build based on your logs, like 'drink water first thing in the morning' or 'set a consistent bedtime routine'.",
+    "movements": "array of strings - Movement practices to incorporate based on your logs, like 'add 15-minute daily walks' or 'try low-impact yoga for flexibility'.",
+    "behavior_goals": "array of strings - Your top 3 behavior goals based on your logs, like 'get 7-8 hours of sleep nightly' or 'eat meals at regular times to balance insulin'.",
+    "encouragement_message": "string - A motivating note to keep you going, like 'You're making great strides—keep prioritizing your health!'"
   }
 }
 """
@@ -232,27 +232,45 @@ def clean_json_string(json_string):
 
     return stripped_string
 
-# --- Main Script Logic ---
 def main():
-    print("Bewell AI Monthly Health Reporter (Plain Python Script)")
-    print("Enter file paths for your monthly health data.")
+    print("=== Bewell AI Monthly Health Reporter ===")
+    print("This script generates a comprehensive monthly health report based on your data.")
+    print("Supported file types: PDF, DOCX, XLSX, XLS, TXT, CSV")
+    print("Daily Logs file is required. Previous Lab Report and Weekly Self-Assessments are optional.\n")
 
-    # --- File Input Section ---
-    previous_lab_report_path = input("Enter path to Previous Lab Report (optional, press Enter to skip): ").strip()
-    daily_logs_path = input("Enter path to Daily Logs (symptoms, routine - required): ").strip()
-    weekly_assessments_path = input("Enter path to Weekly Self-Assessments (optional, press Enter to skip): ").strip()
+    # --- Parse Command-Line Arguments ---
+    parser = argparse.ArgumentParser(description="Bewell AI Monthly Health Reporter")
+    parser.add_argument("--lab-report", help="Path to the Previous Lab Report file (optional)", default="")
+    parser.add_argument("--daily-logs", help="Path to the Daily Logs file (required)", required=True)
+    parser.add_argument("--weekly-assessments", help="Path to the Weekly Self-Assessments file (optional)", default="")
+    parser.add_argument("--api-key", help="Google/Gemini API key (optional, will prompt if not provided)", default="")
+    args = parser.parse_args()
+
+    # --- API Key Handling ---
+    api_key = "AIzaSyArQ9zeya1SO-IwsMappkLStXYT0W7WXfk"
+    if not api_key:
+        api_key = getpass.getpass("Enter your Google/Gemini API key: ")
+
+    if not api_key:
+        print("Error: Please provide a Google/Gemini API key.")
+        return
 
     # --- Process Files and Get Texts ---
-    raw_lab_report_text = extract_text_from_file(previous_lab_report_path) if previous_lab_report_path else ""
-    raw_daily_logs_text = extract_text_from_file(daily_logs_path)
-    raw_weekly_assessments_text = extract_text_from_file(weekly_assessments_path) if weekly_assessments_path else ""
+    print("\nProcessing files...")
+    raw_lab_report_text = extract_text_from_file(args.lab_report) if args.lab_report else ""
+    raw_daily_logs_text = extract_text_from_file(args.daily_logs)
+    raw_weekly_assessments_text = extract_text_from_file(args.weekly_assessments) if args.weekly_assessments else ""
 
     # --- Validate daily logs file is provided ---
-    if not daily_logs_path or raw_daily_logs_text.startswith("[Error"):
-        print("Error: Daily Logs file is required for the monthly report and must be readable. Exiting.")
+    if not raw_daily_logs_text:
+        print("Error: Daily Logs file is required for the monthly report. Please provide a valid file.")
         return
 
     # --- Error Handling for File Processing ---
+    if raw_daily_logs_text.startswith("[Error"):
+        print(f"Error processing Daily Logs: {raw_daily_logs_text}")
+        return
+
     if raw_lab_report_text.startswith("[Error"):
         print(f"Warning: Problem with Previous Lab Report: {raw_lab_report_text}")
         print("Continuing analysis without previous lab report data.")
@@ -263,12 +281,8 @@ def main():
         print("Continuing analysis without weekly self-assessment data.")
         raw_weekly_assessments_text = ""
 
-    # --- Analyze Data ---
-    if not api_key:
-        print("Error: Please set your Google/Gemini API key. Exiting.")
-        return
-
-    print("Generating monthly report... (This may take a few moments)")
+    # --- Generate Report ---
+    print("\nGenerating monthly report... (This may take a few moments)")
     try:
         genai.configure(api_key=api_key)
         model = genai.GenerativeModel(model_name=model_name)
@@ -288,19 +302,24 @@ def main():
         response = model.generate_content(prompt, generation_config=generation_config)
 
         # --- Process and Display Results ---
+        print("\n=== Your Personalized Bewell Monthly Health Report ===")
         if response and response.text is not None:
             cleaned_json_string = clean_json_string(response.text)
             if cleaned_json_string.strip():
                 try:
                     analysis_data = json.loads(cleaned_json_string)
-                    print("\n✨ Your Personalized Bewell Monthly Health Report:")
-                    print(json.dumps(analysis_data, indent=2)) # Pretty print JSON
+                    print("\n=== Raw Response from Gemini API (Post-Markdown Removal) ===")
+                    print(cleaned_json_string)
                 except json.JSONDecodeError as e:
                     print(f"Error: Failed to parse AI response as JSON. The response was not valid JSON: {e}")
                     print("The model returned text, but it was not valid JSON. Here is the raw text from the AI to help with debugging:")
                     print(response.text)
+                    print("\n=== Raw Response from Gemini API (Post-Markdown Removal) ===")
+                    print(cleaned_json_string)
             else:
                 print("Error: The model returned an empty response.")
+                print("\n=== Raw Response from Gemini API (Post-Markdown Removal) ===")
+                print(cleaned_json_string)
         elif response and response.prompt_feedback:
             print(f"Analysis request was blocked. Reason: {response.prompt_feedback.block_reason}")
             if response.prompt_feedback.safety_ratings:
@@ -312,19 +331,6 @@ def main():
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         print("Please check your API key, network connection, and input files.")
-
-    # --- Display Raw Input for Debugging ---
-    show_raw_inputs = input("\nDo you want to show raw inputs sent to AI for debugging? (yes/no): ").strip().lower()
-    if show_raw_inputs == 'yes':
-        print("\n--- Raw Inputs Sent to AI (for debugging) ---")
-        print("Previous Lab Report Text:")
-        print(raw_lab_report_text if raw_lab_report_text else "N/A")
-        print("\nDaily Logs Text:")
-        print(raw_daily_logs_text if raw_daily_logs_text else "N/A")
-        print("\nWeekly Self-Assessments Text:")
-        print(raw_weekly_assessments_text if raw_weekly_assessments_text else "N/A")
-        print("\nFull Prompt Sent to AI:")
-        print(prompt)
 
 if __name__ == "__main__":
     main()

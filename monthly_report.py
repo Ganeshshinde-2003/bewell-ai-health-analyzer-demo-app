@@ -155,69 +155,76 @@ Here is the required JSON object structure:
 MONTHLY_REPORT_JSON_STRUCTURE = """
 {
   "monthly_overview_summary": {
-    "summary": "string - Comprehensive summary of this month’s health trends. Mention key routines (e.g., average sleep duration, general stress level, typical movement patterns).",
-    "top_symptoms": "array of strings - List the top 3-5 most reported symptoms this month.",
-    "health_reflection": "string - Reflection on health gains or fluctuations based on the user's inputs (e.g., improvements in energy, increase in specific symptoms)."
+    "summary": "string - A clear overview of your health trends this month, like how much you slept on average, your stress levels, and your typical movement patterns.",
+    "top_symptoms": "array of strings - The top 3-5 symptoms you reported most often this month.",
+    "health_reflection": "string - A reflection on how your health improved or fluctuated based on what you logged, like boosts in energy or changes in symptoms."
   },
   "hormonal_balance_insight": {
-    "score_or_message": "string - Overall hormonal balance status or message (e.g., 'Balanced', 'Slightly Imbalanced', 'At Risk', 'Needs Attention'). This should be a meaningful assessment based on the provided logs, especially 'Earning Balance' and 'Losing Balance' entries.",
-    "tied_to_logs": "array of strings - Explain how this status is tied to specific logged data, explicitly referencing pillars like 'Sleep Well', 'Move Well', 'Eat Well', 'Recover Well' and factors from 'Earning Balance'/'Losing Balance' columns (e.g., 'short sleep duration (Sleep Well) on average X hours, noted under Losing Balance', 'consistent mindful eating (Eat Well) reported under Earning Balance').",
-    "likely_root_causes": "array of strings - List 1-2 likely hormonal root causes identified from the logs, referencing associated pillars and 'Losing Balance' factors (e.g., 'high cortisol due to chronic stress (Recover Well), often noted in Losing Balance', 'insulin swings from inconsistent meal timing (Eat Well), possibly linked to 'Feeling' column entries')."
+    "score_or_message": "string - Your overall hormonal balance status, like 'Balanced', 'Slightly Imbalanced', 'At Risk', or 'Needs Attention', based on your logs, especially what you noted in 'Earning Balance' and 'Losing Balance'.",
+    "tied_to_logs": "array of strings - How your status connects to specific logs, like short sleep hours in 'Sleep Well' from 'Losing Balance' or consistent mindful eating in 'Eat Well' from 'Earning Balance'.",
+    "likely_root_causes": "array of strings - 1-2 likely causes of hormonal changes based on your logs, like high stress from 'Recover Well' noted in 'Losing Balance' or irregular meal timing in 'Eat Well' from your 'Feeling' notes."
   },
   "logged_patterns": {
     "eat_well": {
-      "did_well": "array of strings - Summarize what the user did well in the 'Eat Well' pillar (e.g., 'consistent whole food intake', 'regular meal timing', 'adequate hydration').",
-      "areas_to_improve": "array of strings - Mention areas for improvement in the 'Eat Well' pillar (e.g., 'frequent consumption of processed foods', 'skipping meals', 'excessive caffeine intake').",
-      "recommendations": "array of strings - Offer short, actionable recommendations based on real logs for this pillar.",
+      "did_well": "array of strings - Things you nailed in the 'Eat Well' pillar, like eating whole foods consistently or sticking to regular meal times.",
+      "areas_to_improve": "array of strings - Areas to work on in the 'Eat Well' pillar, like cutting back on processed foods or not skipping meals.",
+      "recommendations": "array of strings - Simple, actionable tips based on your eating logs.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to enhance your eating habits, like 'Try adding a variety of colorful vegetables to your meals to boost nutrient intake.' or 'Plan your meals ahead to avoid skipping them on busy days.'",
       "metrics": {
-        "days_logged": "number - Total days Eat Well data was logged.",
-        "average_meal_satisfaction_score": "number (0-5, or similar scale) - Average satisfaction with meals, *inferred from qualitative descriptions like 'Feeling' if no explicit score is given* (e.g., 3.5).",
-        "processed_food_days_percentage": "number (0-100) - Percentage of days processed food consumption was noted, *inferred from relevant qualitative descriptions if no explicit data is given* (e.g., 40)."
+        "days_logged": "number - Total days you logged 'Eat Well' data.",
+        "average_meal_satisfaction_score": "number (0-5) - Your average satisfaction with meals, inferred from your 'Feeling' notes if no score is given (e.g., 3.5).",
+        "processed_food_days_percentage": "number (0-100) - Percentage of days you noted processed food, inferred from your logs if not explicit (e.g., 40)."
       }
     },
     "sleep_well": {
-      "did_well": "array of strings - Summarize what the user did well in the 'Sleep Well' pillar (e.g., 'consistent bedtime routine', 'adequate sleep duration on most nights').",
-      "areas_to_improve": "array of strings - Mention areas for improvement in the 'Sleep Well' pillar (e.g., 'late-night screen exposure', 'inconsistent sleep schedule', 'alcohol before bed').",
-      "recommendations": "array of strings - Offer short, actionable recommendations based on real logs for this pillar.",
+      "did_well": "array of strings - What you did great in the 'Sleep Well' pillar, like keeping a consistent bedtime or getting enough sleep most nights.",
+      "areas_to_improve": "array of strings - Areas to improve in 'Sleep Well', like reducing late-night screen time or avoiding alcohol before bed.",
+      "recommendations": "array of strings - Simple, actionable tips based on your sleep logs.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to improve your sleep, like 'Set a consistent bedtime routine to signal your body it’s time to rest.' or 'Limit screen time an hour before bed to improve sleep quality.'",
       "metrics": {
-        "days_logged": "number - Total days Sleep Well data was logged.",
-        "average_sleep_quality_score": "number (0-5, or similar scale) - Average sleep quality, *inferred from qualitative descriptions like 'Feeling' or 'Earning Balance' if no explicit score is given* (e.g., 4.2).",
-        "average_sleep_hours": "number - Average hours of sleep per night, *extracted directly from provided numerical columns/entries, specifically the 'Time' column* (e.g., 6.8).",
-        "consistent_bedtime_percentage": "number (0-100) - Percentage of days with consistent bed/wake times, *inferred from qualitative descriptions or time patterns if no explicit data is given* (e.g., 75)."
+        "days_logged": "number - Total days you logged 'Sleep Well' data.",
+        "average_sleep_quality_score": "number (0-5) - Your average sleep quality, inferred from 'Feeling' or 'Earning Balance' if no score is given (e.g., 4.2).",
+        "average_sleep_hours": "number - Your average sleep hours per night, taken from the 'Time' column (e.g., 6.8).",
+        "consistent_bedtime_percentage": "number (0-100) - Percentage of days with consistent bed/wake times, inferred from your logs if not explicit (e.g., 75)."
       }
     },
     "move_well": {
-      "did_well": "array of strings - Summarize what the user did well in the 'Move Well' pillar (e.g., 'regular walks', 'incorporation of strength training').",
-      "areas_to_improve": "array of strings - Mention areas for improvement in the 'Move Well' pillar (e.g., 'prolonged sitting', 'lack of consistent exercise', 'over-exercising').",
-      "recommendations": "array of strings - Offer short, actionable recommendations based on real logs for this pillar.",
+      "did_well": "array of strings - What you excelled at in the 'Move Well' pillar, like regular walks or adding strength training.",
+      "areas_to_improve": "array of strings - Areas to work on in 'Move Well', like sitting too long or not exercising consistently.",
+      "recommendations": "array of strings - Simple, actionable tips based on your movement logs.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to enhance your movement, like 'Incorporate short walks during your workday to reduce sedentary time.' or 'Try a weekly yoga session to improve flexibility and reduce stress.'",
       "metrics": {
-        "days_logged": "number - Total days Move Well data was logged.",
-        "activity_days_percentage": "number (0-100) - Percentage of days activity was logged, *inferred from relevant qualitative descriptions if no explicit data is given* (e.g., 60).",
-        "average_activity_intensity_score": "number (0-5, or similar scale) - Average intensity of workouts, *inferred from qualitative descriptions if no explicit score is given* (e.g., 3)."
+        "days_logged": "number - Total days you logged 'Move Well' data.",
+        "activity_days_percentage": "number (0-100) - Percentage of days you logged activity, inferred from your logs if not explicit (e.g., 60).",
+        "average_activity_intensity_score": "number (0-5) - Your average workout intensity, inferred from your logs if no score is given (e.g., 3)."
       }
     },
     "recover_well": {
-      "did_well": "array of strings - Summarize what the user did well in the 'Recover Well' pillar (e.g., 'regular meditation', 'taking breaks during work').",
-      "areas_to_improve": "array of strings - Mention areas for improvement in the 'Recover Well' pillar (e.g., 'high stress levels', 'overuse of social media', 'isolating from social connections').",
-      "recommendations": "array of strings - Offer short, actionable recommendations based on real logs for this pillar.",
+      "did_well": "array of strings - Things you did well in the 'Recover Well' pillar, like meditating regularly or taking work breaks.",
+      "areas_to_improve": "array of strings - Areas to improve in 'Recover Well', like managing high stress or cutting back on social media.",
+      "recommendations": "array of strings - Simple, actionable tips based on your recovery logs.",
+      "Guidance": "array of strings - 2-4 sentences offering practical advice to boost your recovery, like 'Schedule short breaks during your day to recharge and lower stress.' or 'Try a 5-minute breathing exercise to manage anxiety.'",
       "metrics": {
-        "days_logged": "number - Total days Recover Well data was logged.",
-        "average_stress_level_score": "number (0-5, or similar scale) - Average reported stress level, *inferred from qualitative descriptions like 'Feeling' or 'Mood' if no explicit score is given* (e.g., 3.8).",
-        "recovery_activity_days_percentage": "number (0-100) - Percentage of days recovery activity was noted, *inferred from relevant qualitative descriptions if no explicit data is given* (e.g., 50)."
+        "days_logged": "number - Total days you logged 'Recover Well' data.",
+        "average_stress_level_score": "number (0-5) - Your average stress level, inferred from 'Feeling' or 'Mood' if no score is given (e.g., 3.8).",
+        "recovery_activity_days_percentage": "number (0-100) - Percentage of days you noted recovery activities, inferred from your logs if not explicit (e.g., 50)."
       }
     }
   },
   "root_cause_tags": [
-    // array of objects - Based on logs and symptoms, tag their status and explain contribution.
-    // Each object in this array should have the following structure:
-    // {
-    //   "tag": "string - e.g., '🧠 Stress-related hormonal disruption', '⚖️ Blood sugar instability', '🔥 Inflammatory response'",
-    //   "explanation": "string - A sentence explaining how their routines contributed to that pattern."
-    // }
+    {
+      "tag": "string - e.g., '🧠 Stress-related hormonal disruption', '⚖️ Blood sugar instability', '🔥 Inflammatory response'",
+      "explanation": "string - A sentence explaining how your routines contributed to this pattern."
+    }
   ],
   "actionable_next_steps": {
-    "behavior_goals": "array of strings - Top 3 behavior goals personalized to their logs (e.g., 'improve sleep consistency by X hours', 'regulate meal timing to reduce insulin spikes', 'reduce caffeine intake to minimize anxiety').",
-    "encouragement_message": "string - One encouraging sentence to motivate progress."
+    "food_to_enjoy": "array of strings - Specific foods or eating habits to embrace based on your logs, like 'leafy greens for nutrient density' or 'healthy fats like avocado to support hormonal balance'.",
+    "food_to_limit": "array of strings - Foods or eating habits to cut back on based on your logs, like 'sugary snacks to stabilize blood sugar' or 'excessive caffeine to reduce anxiety'.",
+    "rest_and_recovery": "array of strings - Actions to prioritize for rest and recovery based on your logs, like 'try 10-minute daily meditation' or 'schedule downtime to lower stress'.",
+    "daily_habits": "array of strings - Small daily habits to build based on your logs, like 'drink water first thing in the morning' or 'set a consistent bedtime routine'.",
+    "movements": "array of strings - Movement practices to incorporate based on your logs, like 'add 15-minute daily walks' or 'try low-impact yoga for flexibility'.",
+    "behavior_goals": "array of strings - Your top 3 behavior goals based on your logs, like 'get 7-8 hours of sleep nightly' or 'eat meals at regular times to balance insulin'.",
+    "encouragement_message": "string - A motivating note to keep you going, like 'You're making great strides—keep prioritizing your health!'"
   }
 }
 """
@@ -311,6 +318,9 @@ def main():
                             analysis_data = json.loads(cleaned_json_string)
                             st.header("✨ Your Personalized Bewell Monthly Health Report:")
                             st.json(analysis_data)
+                             # Display raw response after JSON
+                            st.subheader("Raw Response from Gemini API (Post-Markdown Removal):")
+                            st.text(cleaned_json_string)
                         except json.JSONDecodeError as e:
                             st.error(f"Error: Failed to parse AI response as JSON. The response was not valid JSON: {e}")
                             st.write("The model returned text, but it was not valid JSON. Here is the raw text from the AI to help with debugging:")

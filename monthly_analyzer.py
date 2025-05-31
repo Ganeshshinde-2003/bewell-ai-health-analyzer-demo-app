@@ -98,6 +98,7 @@ Instructions for Output:
 - Do NOT include introductory or concluding text outside the JSON object.
 - Do NOT wrap the JSON in markdown code blocks (```json ... ``` or ``` ... ```).
 - Populate all fields based *only* on the provided user data. If data is missing or invalid, use default values (e.g., 0 for metrics, empty arrays for lists) and note limitations in the `summary` field.
+- For fields specified as 'array of strings' (e.g., `tied_to_logs`, `likely_root_causes`), ensure each entry is a distinct string in the array. Do NOT combine multiple points into a single string. Each entry should be concise and focused on a single log or cause.
 
 **CRITICAL TEXT MARKING FOR HIGHLIGHTING**
 - Use **C1[text]C1** for critical information and action items in descriptive text fields only (e.g., **C1[fatigue]C1**, **C1[eat more fiber]C1**).
@@ -113,7 +114,7 @@ The daily logs contain two sections:
 
 **Analysis Instructions:**
 - **Numerical Metrics**: Extract explicit numerical values from columns like `Time` (e.g., sleep hours). If missing, infer a score (0-5, 5 best) from qualitative columns (`Feeling`, `Earning Balance`, `Losing Balance`, `Mood`, `Energy Level`). E.g., "Slept soundly" → 4, "Nauseous" → 1. If no data, use 0 or null and note in `summary` (e.g., "Limited **C2[Eat Well data]C2** detected").
-- **Hormonal Balance Insight**: Analyze `Earning Balance` and `Losing Balance` for hormonal impact, using `Feeling` for context. `score_or_message`: Provide a status (e.g., "**C1[Balanced]C1**" or "**C1[Needs Attention]C1** due to **C2[high stress]C2**"). `tied_to_logs` and `likely_root_causes`: Link to specific pillar actions (e.g., "**C1[short sleep]C1** in Sleep Well, **C2[5.5 hours]C2**").
+- **Hormonal Balance Insight**: Analyze `Earning Balance` and `Losing Balance` for hormonal impact, using `Feeling` for context. `score_or_message`: Provide a status (e.g., "**C1[Balanced]C1**" or "**C1[Needs Attention]C1** due to **C2[high stress]C2**"). `tied_to_logs`: List specific log entries as separate strings (e.g., ["**C1[short sleep hours]C1** in Sleep Well", "**C1[high stress]C1** in Recover Well"]). `likely_root_causes`: List 1-2 distinct causes as separate strings (e.g., ["**C2[high stress]C2** from Recover Well", "**C1[irregular meal timing]C1** in Eat Well"]).
 - **Monthly Overview and Symptoms**: Use `Mood`, `Symptoms`, `Energy Level` to populate `top_symptoms` (no highlighting) and inform `summary`/`health_reflection` with highlights (e.g., "**C1[fatigue]C1**").
 - **Radar Chart Data**: Follow the scoring instructions provided in the JSON structure below.
 
@@ -167,7 +168,7 @@ MONTHLY_REPORT_JSON_STRUCTURE = """
         "average_activity_intensity_score": "number (0-5) - Your average workout intensity, inferred from your logs if no score is given (e.g., 3)."
       }
     },
-    "recover__well": {
+    "recover_well": {
       "did_well": "array of strings - Things you did well in the Recover Well pillar, like 'meditating regularly' or 'taking work breaks'.",
       "areas_to_improve": "array of strings - Areas to improve in Recover Well, like 'managing high stress' or 'cutting back on social media'.",
       "recommendations": "array of strings - Simple, actionable tips based on your recovery logs, e.g., 'try 5-minute breathing exercises'.",

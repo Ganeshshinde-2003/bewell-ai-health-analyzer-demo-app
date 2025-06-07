@@ -255,7 +255,7 @@ def clean_json_string(json_string):
 
 # --- Main Streamlit App ---
 def main():
-    st.title("Bewell AI Monthly Health Reporter")
+    st.title("Bewell AI Monthly Health Reporter-Final")
     st.write("Upload your monthly health data (daily logs, self-assessments) and optionally a previous lab report for a comprehensive monthly analysis.")
 
     # --- File Upload Section ---

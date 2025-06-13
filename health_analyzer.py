@@ -14,6 +14,7 @@ def extract_text_from_file(file_path):
     Returns extracted text as a string or an error marker.
     """
     if not file_path or not os.path.exists(file_path):
+        # Return an empty string if file doesn't exist or path is empty
         return ""
 
     file_extension = os.path.splitext(file_path)[1].lower()
@@ -31,8 +32,8 @@ def extract_text_from_file(file_path):
                     text += page.get_text("text") + "\n"
                 pdf_document.close()
             except Exception as e:
-                print(f"Error processing PDF file: {e}")
-                return "[Error Processing PDF File]"
+                print(f"Error processing PDF file '{file_path}': {e}")
+                return f"[Error Processing PDF File: {file_path}]"
 
         elif file_extension == ".docx":
             try:
@@ -40,31 +41,36 @@ def extract_text_from_file(file_path):
                 for para in doc.paragraphs:
                     text += para.text + "\n"
             except Exception as e:
-                print(f"Error processing DOCX file: {e}")
-                return "[Error Processing DOCX File]"
+                print(f"Error processing DOCX file '{file_path}': {e}")
+                return f"[Error Processing DOCX File: {file_path}]"
 
         elif file_extension in [".xlsx", ".xls"]:
             try:
+                # Use engine='openpyxl' explicitly for .xlsx or 'xlrd' for .xls if needed,
+                # pandas usually infers.
                 excel_data = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
                 for sheet_name, df in excel_data.items():
                     text += f"--- Sheet: {sheet_name} ---\n"
-                    text += df.to_string(index=False) + "\n\n"
+                    # Convert DataFrame to string, ensure all columns are included
+                    text += df.to_string(index=False, header=True) + "\n\n"
             except Exception as excel_e:
                 print(
                     f"Could not read Excel file '{file_path}'. Ensure 'openpyxl' (for .xlsx) or 'xlrd' (for .xls) is installed. Error: {excel_e}")
-                return f"[Could not automatically process Excel file {file_path} - Please try saving as PDF/TXT.]"
+                return f"[Could not automatically process Excel file {file_path} - Please try saving as PDF/TXT or ensure required libraries are installed.]"
 
         elif file_extension in [".txt", ".csv"]:
+            # Decode using utf-8, ignoring errors for robustness
             text = file_bytes.decode('utf-8', errors='ignore')
 
         else:
             print(f"Unsupported file type: {file_extension} for file '{file_path}'")
-            return "[Unsupported File Type]"
+            return f"[Unsupported File Type: {file_path}]"
 
     except Exception as e:
-        print(f"An error occurred while processing '{file_path}': {e}")
-        return "[Error Processing File]"
+        print(f"An unexpected error occurred while processing '{file_path}': {e}")
+        return f"[Error Processing File: {file_path}]"
 
+    # Add a note if no readable text was extracted, especially for non-text files
     if not text.strip() and file_extension not in [".txt", ".csv"]:
         print(
             f"No readable text extracted from '{file_path}'. The file might be scanned, empty, or have complex formatting. Consider using a text-based format.")
@@ -140,7 +146,7 @@ Generate ONE complete JSON object following the JSON_STRUCTURE_DEFINITION below.
 **Four Pillars Scoring**
 - Score each pillar (Eat Well, Sleep Well, Move Well, Recover Well) from 1 (needs improvement) to 10 (optimal) based on your data.
 - Link scores to your inputs in simple terms (e.g., 'Your **C1[skipping meals]C1** gives Eat Well a low score of 4 because regular meals fuel your body').
-- For each pillar, provide a 'score_rationale' array with at least 2 sentences in simple language explaining why the score was given, tied to your data (e.g., 'Eat Well got 4 because **C1[skipping meals]C1** means you miss energy. Eating regularly helps your body stay strong.')
+- For each pillar, provide a 'score_rationale' array with at least 2 sentences in simple language explaining why the score was given, tied to your data (e.g., 'Your Eat Well score is 4 because **C1[skipping meals]C1** means you miss energy. Eating regularly helps your body stay strong.')
 """
 
 # --- JSON Structure Definition ---
@@ -246,7 +252,8 @@ def main():
     # --- Parse Command-Line Arguments ---
     parser = argparse.ArgumentParser(description="Bewell AI Health Analyzer: Analyze health assessment and lab report files.")
     parser.add_argument("--health-assessment", required=True, help="Path to the health assessment file (PDF, DOCX, XLSX, XLS, TXT, CSV)")
-    parser.add_argument("--lab-report", help="Path to the lab report file (PDF, DOCX, XLSX, XLS, TXT, CSV, optional)")
+    # Modified to accept multiple lab report files
+    parser.add_argument("--lab-report", nargs='*', help="Paths to one or more lab report files (PDF, DOCX, XLSX, XLS, TXT, CSV, optional)")
     parser.add_argument("--api-key", help="Google/Gemini API key (optional, defaults to GOOGLE_API_KEY env variable)")
     args = parser.parse_args()
 
@@ -256,17 +263,29 @@ def main():
         print("Error: Please provide a Google/Gemini API key via --api-key or set GOOGLE_API_KEY environment variable.")
         return
 
-    # --- Process Files ---
+    # --- Process Health Assessment File ---
     raw_health_assessment_input = extract_text_from_file(args.health_assessment)
-    raw_lab_report_input = extract_text_from_file(args.lab_report) if args.lab_report else ""
-
     if raw_health_assessment_input.startswith("[Error"):
         print(f"Error processing Health Assessment: {raw_health_assessment_input}")
         return
-    if raw_lab_report_input.startswith("[Error"):
-        print(f"Warning: Problem with Lab Report: {raw_lab_report_input}")
-        print("Continuing analysis without lab report data.")
-        raw_lab_report_input = ""
+
+    # --- Process Multiple Lab Report Files ---
+    combined_lab_report_text = ""
+    if args.lab_report:
+        extracted_lab_texts = []
+        for lab_file_path in args.lab_report:
+            # Extract text for each lab report
+            extracted_text = extract_text_from_file(lab_file_path)
+            if extracted_text.startswith("[Error") or not extracted_text.strip():
+                # Append error message or note about unreadable content
+                extracted_lab_texts.append(f"\n--- Lab Report: {os.path.basename(lab_file_path)} (Problem Detected) ---\n" + extracted_text)
+                print(f"Warning: Problem with Lab Report file '{lab_file_path}': {extracted_text}")
+            else:
+                # Prepend with filename for clarity in the prompt
+                extracted_lab_texts.append(f"\n--- Lab Report: {os.path.basename(lab_file_path)} ---\n" + extracted_text)
+
+        # Combine all extracted lab report texts
+        combined_lab_report_text = "\n".join(extracted_lab_texts)
 
     # --- Generate Analysis ---
     try:
@@ -274,10 +293,10 @@ def main():
         model = genai.GenerativeModel(model_name=model_name, generation_config=generation_config)
 
         lab_report_section = ""
-        if raw_lab_report_input:
+        if combined_lab_report_text.strip(): # Check if combined text is not empty
             lab_report_section = f"""
-Here is the user's Lab Report text:
-{raw_lab_report_input}
+Here are the user's Lab Report texts:
+{combined_lab_report_text}
 """
         else:
             lab_report_section = """
@@ -314,3 +333,4 @@ No Lab Report text was provided. Analysis will be based solely on Health Assessm
 
 if __name__ == "__main__":
     main()
+

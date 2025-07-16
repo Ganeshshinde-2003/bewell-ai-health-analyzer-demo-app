@@ -78,7 +78,7 @@ def extract_text_from_file(uploaded_file):
     return text
 
 # --- API Key Handling ---
-api_key = "AIzaSyBRFhGQJ3YOYZ8TZy7un0iwXhXfl2Ol8yQ"
+api_key = "AIzaSyBRFhGQJ3YOYZ8TZy7un0iwXhXfl2Ol8yQ" # Replace with your actual key or load from secrets
 if not api_key:
   st.warning("Please add your Google/Gemini API key to Streamlit secrets or environment variables, or paste it below.")
   api_key = st.text_input("Paste your Google/Gemini API Key here:", type="password")
@@ -93,7 +93,8 @@ generation_config = {
     "response_mime_type": "application/json"  # Ensures strict JSON
 }
 
-BASE_PROMPT_INSTRUCTIONS = """
+# --- Base Prompt Instructions (Common to all calls) ---
+BASE_PROMPT_COMMON = """
 Role & Persona:
 You are the Bewell AI Assistant. Your persona is a blend of a holistic women's health expert, a functional medicine practitioner, and a precision medicine specialist, with a dedicated focus on women's care.
 
@@ -104,24 +105,17 @@ Adopt an approachable, empathetic, supportive, clear, and accessible tone. Alway
 🔑 Your Input Data:
 • Health Assessment Text: {health_assessment_text}
 • Lab Report Text: {lab_report_section_placeholder}
-Your analysis must be based *only* on the data provided in these inputs.
 
 ---
 ⚠️ Critical Instructions & Output Format:
 1.  **JSON Output ONLY**: Generate ONE single, complete, and comprehensive JSON object that strictly follows the `JSON_STRUCTURE_DEFINITION` provided below. There must be NO other text, explanations, or markdown code blocks (```json ... ```) outside of this single JSON object.
 
-2.  **Critical Biomarker Accuracy**:
-    • Extract all biomarkers with valid results. Clearly identify the biomarker name, your result, the reference range, and the status as "optimal", "keep_in_mind", or "attention_needed".
-    • Exclude any biomarkers marked as "Not Performed" or "Request Problem" from the 'detailed_biomarkers' list. These must be listed separately in the 'crucial_biomarkers_to_measure' section. For each, explain its importance in simple terms directly linked to your symptoms (e.g., "Test your DHEA, Serum to check how your body handles stress, since you are feeling **C1[exhausted]C1**.").
-    • **Count Verification (Crucial)**: After generating the 'detailed_biomarkers' list, you must perform a count verification. The final number for 'lab_analysis.biomarkers_tested_count' MUST be equal to the sum of 'optimal_count' + 'keep_in_mind_count' + 'attention_needed_count'. If the counts do not match, you must re-process the biomarkers to ensure accuracy.
-    • If the lab report text is unreadable or ambiguous, you must note this in the 'lab_analysis.overall_summary' field (e.g., "Some of your lab results couldn’t be read due to file issues. The recommendations are based on your available data and health details.").
-
-3.  **Comprehensive & Personalized Array Requirement**:
+2.  **Comprehensive & Personalized Array Requirement**:
     • **NO GENERIC FILLERS**: It is critical that you AVOID generic, repetitive placeholder text like "General recommendation for women's health." Every item in every array must be a specific, actionable, and valuable piece of information.
-    • **PRIORITIZE PERSONALIZATION**: You must make every effort to connect recommendations in arrays (like 'recommended_foods') to the user's specific symptoms, habits, or biomarker data. For example, if the user mentions **C1[fatigue]C1**, recommend specific energy-supporting foods.
+    • **PRIORITIZE PERSONALIZATION**: You must make every effort to connect recommendations in arrays to the user's specific symptoms, habits, or biomarker data.
     • **USEFUL GENERAL ADVICE (LAST RESORT)**: If, after thorough analysis, there is truly NO data to personalize a specific point, you must provide a genuinely helpful and specific piece of general advice. Instead of "General workout," suggest "Try 30 minutes of brisk walking daily, as it's a great way to improve cardiovascular health and boost mood."
 
-4.  **Text Highlighting Rules**:
+3.  **Text Highlighting Rules**:
     • Use **C1[text]C1** to highlight your primary symptoms or critical action steps within descriptive text fields (e.g., "Your **C1[fatigue]C1** may be linked to...").
     • Use **C2[text]C2** to highlight specific biomarker results, values, or alerts that require your attention (e.g., "...due to your **C2[high cortisol levels]C2**.").
     • Apply these markers sparingly and only in descriptive text fields for clarity. Do NOT apply them to single-value fields like 'name' or 'result'.
@@ -136,33 +130,11 @@ Your analysis must be based *only* on the data provided in these inputs.
 3.  **Strong Educational Empowerment**: Provide the "why" behind every recommendation. Use simple scientific explanations to empower the user with knowledge (e.g., "Eating more fiber helps your body get rid of extra estrogen that can contribute to your **C1[bloating]C1**.").
 
 4.  **Personalization is Key**: Every piece of analysis, rationale, and recommendation must be explicitly and clearly tied back to the user's provided data (symptoms, diagnoses, biomarkers).
-
----
-🚨 **PILLAR-SPECIFIC CONTENT AND NAMING RULES - NON-NEGOTIABLE**:
-This is your most important rule for the `four_pillars` section.
-1.  **Fixed Pillar Names**: You MUST generate exactly four pillar objects. Their `name` fields MUST be exactly: `"Eat Well"`, `"Sleep Well"`, `"Move Well"`, and `"Recover Well"`.
-2.  **Contextual Recommendations - NO EMPTY ARRAYS**: When you are generating content for a specific pillar, you MUST fill ALL SIX recommendation arrays inside its `additional_guidance.structure`. You will do this by making the recommendations **relevant to the pillar's theme**. This is not optional.
-    * **For the "Eat Well" pillar**: `recommended_workouts` must be about workouts that aid digestion (e.g., "A gentle walk after meals"). `recommended_recovery_tips` must be about nutritional recovery (e.g., "Eat protein after a workout").
-    * **For the "Move Well" pillar**: `recommended_foods` must be about foods that fuel exercise (e.g., "Oatmeal for sustained energy"). `recommended_recovery_tips` must be about physical recovery from exercise (e.g., "Stretching or foam rolling").
-    * **For the "Sleep Well" pillar**: `recommended_foods` must be about foods that promote sleep (e.g., "Tart cherries for melatonin"). `recommended_workouts` must be about exercises that improve sleep (e.g., "Avoid intense exercise before bed").
-    * **For the "Recover Well" pillar**: `recommended_foods` must be about foods that help manage stress (e.g., "Foods rich in Vitamin C"). `recommended_workouts` must be about stress-reducing exercise (e.g., "Yoga or Tai Chi").
-
----
-✅ Final JSON Accuracy Checklist:
-Before finalizing your response, you must verify the following:
-- Is the output a single, valid JSON object with no extra text?
-- Are the biomarker counts accurate and verified?
-- **Are all arrays and fields filled with specific, valuable, and non-repetitive information, according to the PILLAR-SPECIFIC CONTENT AND NAMING RULES above?**
-- Have generic placeholders been completely avoided?
-- **CRITICAL SYNTAX CHECK - NON-NEGOTIABLE:** The JSON structure MUST be perfect. You are REQUIRED to place a comma (,) after the closing brace (`}}`) of the `lab_analysis` object, the `four_pillars` object, and the `supplements` object. Forgetting these commas will invalidate the entire output and is a failure of your task. You must double-check this before finalizing.
-- Is every recommendation either directly tied to user data or a genuinely useful piece of general advice (used only as a last resort)?
-- Has the highlighting (C1, C2) been used appropriately and sparingly?
-- Is the tone consistently empowering, supportive, and easy to understand?
-- **FINAL SYNTAX SCAN: Have I scanned my entire completed JSON response to ensure there are no stray characters, letters, or typos (like a random 'e' on its own line) that would make the JSON invalid? The response must be perfectly clean.**
 """
 
-# --- JSON Structure Definition ---
-JSON_STRUCTURE_DEFINITION = """
+# --- JSON Structure Definitions for each part ---
+
+JSON_STRUCTURE_BIOMARKERS = """
 {
   "lab_analysis": {
     "overall_summary": "string - Summarizes your health status using your lab results and health details in simple terms, as if explaining to someone new to health topics. Highlights your key issues and actions (e.g., 'Your **C1[tiredness]C1** and **C2[high thyroid hormone]C2** suggest checking your thyroid'). If no lab report, notes analysis uses only your health details. For unreadable lab data, states: 'Some of your lab results couldn’t be read due to file issues. Advice uses your available data.'",
@@ -191,7 +163,12 @@ JSON_STRUCTURE_DEFINITION = """
       }
     ],
     "health_recommendation_summary": ["string - Simple, actionable steps for you (e.g., 'Retest DHEA, Serum to understand your **C1[stress]C1**')."]
-  },
+  }
+}
+"""
+
+JSON_STRUCTURE_4PILLARS = """
+{
   "four_pillars": {
     "introduction": "string - Summarizes your health status and lab findings in simple terms for the four areas (eating, sleeping, moving, recovering).",
     "pillars": [
@@ -216,7 +193,12 @@ JSON_STRUCTURE_DEFINITION = """
         }
       }
     ]
-  },
+  }
+}
+"""
+
+JSON_STRUCTURE_SUPPLEMENTS_ACTIONS = """
+{
   "supplements": {
     "description": "string - Explains supplement advice in simple terms based on your lab or health data (e.g., 'These supplements may help with your **C1[tiredness]C1**').",
     "structure": {
@@ -245,7 +227,6 @@ JSON_STRUCTURE_DEFINITION = """
 }
 """
 
-
 def clean_json_string(json_string):
     """Removes markdown code blocks and attempts to fix common JSON errors."""
     if not isinstance(json_string, str):
@@ -258,6 +239,45 @@ def clean_json_string(json_string):
     stripped_string = re.sub(r',\s*]', ']', stripped_string)
     
     return stripped_string
+
+def call_gemini_with_retry(prompt, model, generation_config, max_retries=3):
+    """
+    Calls the Gemini model with a prompt, handling retries for JSON errors.
+    Returns parsed JSON data or raises an exception.
+    """
+    raw_response_for_debugging = ""
+    for attempt in range(max_retries):
+        if attempt > 0: # Only show "ongoing" for retries, not the first attempt
+            st.info(f"Attempt {attempt + 1} is ongoing...")
+            time.sleep(1) # Small delay before retrying the call
+
+        try:
+            response_stream = model.generate_content(prompt, stream=True)
+            full_response_text = "".join(chunk.text for chunk in response_stream if chunk.text)
+            raw_response_for_debugging = full_response_text
+
+            if full_response_text:
+                cleaned_json_string = clean_json_string(full_response_text)
+                return json.loads(cleaned_json_string), raw_response_for_debugging
+            else:
+                raise ValueError("Model returned an empty response.")
+
+        except json.JSONDecodeError as e:
+            if attempt < max_retries - 1:
+                st.warning(f"Attempt {attempt + 1} failed (Invalid JSON). Retrying...")
+                time.sleep(2)  # Wait 2 seconds before retrying
+            else:
+                st.error(f"Attempt {attempt + 1} failed. Failed to get valid JSON after {max_retries} attempts: {e}")
+                raise Exception(f"Failed to get valid JSON after {max_retries} attempts: {e}")
+        except Exception as e:
+            if attempt < max_retries - 1:
+                st.warning(f"Attempt {attempt + 1} failed (Unexpected error: {e}). Retrying...")
+                time.sleep(2)
+            else:
+                st.error(f"Attempt {attempt + 1} failed. An unexpected error occurred after {max_retries} attempts: {e}")
+                raise
+    # This line should technically not be reached if exceptions are always raised on final failure
+    raise Exception("Max retries reached without a successful response.")
 
 # --- Main Streamlit App ---
 def main():
@@ -284,7 +304,6 @@ def main():
         st.info("Please upload a health assessment file to begin.")
         st.stop()
         
-    # --- This is the new, robust analysis block ---
     if st.button("Analyze My Data ✨", type="primary"):
         if not api_key:
             st.error("🚨 Please provide a Google/Gemini API key in the sidebar to proceed.")
@@ -306,109 +325,159 @@ def main():
             st.error(f"Critical Error processing Health Assessment: {raw_health_assessment_input}")
             st.stop()
 
-        # Prepare the full prompt
-        lab_report_section = ""
+        lab_report_section_formatted = ""
         if combined_lab_report_text:
-            lab_report_section = f"""
+            lab_report_section_formatted = f"""
 Here is the user's Lab Report text (potentially multiple reports combined):
 {combined_lab_report_text}
 """
         else:
-            lab_report_section = "No Lab Report text was provided. Analysis will be based solely on Health Assessment data."
+            lab_report_section_formatted = "No Lab Report text was provided. Analysis will be based solely on Health Assessment data."
         
-        full_prompt = BASE_PROMPT_INSTRUCTIONS.format(
-            health_assessment_text=raw_health_assessment_input,
-            lab_report_section_placeholder=lab_report_section
-        ) + JSON_STRUCTURE_DEFINITION
+        genai.configure(api_key=api_key)
+        model = genai.GenerativeModel(model_name=model_name, generation_config=generation_config)
+        
+        # Initialize the final output dictionary as empty
+        final_combined_output = {}
+        
+        all_raw_responses_for_debugging = {}
+        full_prompts_for_debugging = {} # Store prompts for debugging
 
-        with st.spinner("Analyzing data... This may take a moment. Please wait."):
-            analysis_data = None
-            final_error_message = ""
-            raw_response_for_debugging = ""
-            MAX_RETRIES = 3
+        # Use st.status for overall progress
+        with st.status("Initiating Bewell Analysis...", expanded=True) as status_message_box:
+            status_message_box.write("⚙️ Preparing data for analysis...")
+
+            # --- Part 1: Biomarkers Analysis ---
+            status_message_box.write("🔬 Analyzing Biomarkers...")
+            biomarker_prompt = BASE_PROMPT_COMMON.format(
+                health_assessment_text=raw_health_assessment_input,
+                lab_report_section_placeholder=lab_report_section_formatted
+            ) + "--- Specific Instructions for Biomarker Analysis ---\n" + JSON_STRUCTURE_BIOMARKERS
+            full_prompts_for_debugging["Biomarkers Analysis Prompt"] = biomarker_prompt
 
             try:
-                genai.configure(api_key=api_key)
-                model = genai.GenerativeModel(model_name=model_name, generation_config=generation_config)
-
-                for attempt in range(MAX_RETRIES):
-                    st.info(f"🧠 Analysis attempt {attempt + 1} of {MAX_RETRIES}...")
-                    try:
-                        # 1. Use stream=True
-                        response_stream = model.generate_content(full_prompt, stream=True)
-                        
-                        # 2. Assemble the full response from chunks
-                        full_response_text = "".join(chunk.text for chunk in response_stream if chunk.text)
-                        raw_response_for_debugging = full_response_text
-                        
-                        # 3. Clean and parse the fully assembled response
-                        if full_response_text:
-                            cleaned_json_string = clean_json_string(full_response_text)
-                            analysis_data = json.loads(cleaned_json_string)
-                            
-                            st.success("✅ Successfully generated and parsed the analysis!")
-                            break  # Exit loop on success
-                        else:
-                            raise ValueError("Model returned an empty response.")
-
-                    except json.JSONDecodeError as e:
-                        final_error_message = f"Invalid JSON received: {e}"
-                        st.warning(f"Attempt {attempt + 1} failed. {final_error_message}")
-                        if attempt < MAX_RETRIES - 1:
-                            time.sleep(2) # Wait 2 seconds before retrying
-                            st.info("Retrying...")
-                        else:
-                            st.error("❌ Failed to get valid JSON after multiple attempts.")
-                    
-                    except Exception as e:
-                        # Handle other potential errors (e.g., API blocks, network issues)
-                        final_error_message = f"An unexpected error occurred: {e}"
-                        st.error(final_error_message)
-                        # Stop retrying on non-JSON errors
-                        break
-            
+                biomarker_data_raw, raw_biomarker_response = call_gemini_with_retry(biomarker_prompt, model, generation_config)
+                # Directly update the final_combined_output with the raw JSON from Gemini
+                if biomarker_data_raw:
+                    final_combined_output.update(biomarker_data_raw) 
+                all_raw_responses_for_debugging["Biomarkers Raw Response"] = raw_biomarker_response
+                status_message_box.write("✅ Biomarker analysis complete.")
             except Exception as e:
-                st.error(f"A critical error occurred before starting analysis: {e}")
-                final_error_message = str(e)
+                status_message_box.error(f"Failed to analyze biomarkers: {e}")
+                # For robustness, we will continue even if one part fails, but note the error
+                pass
 
+            # --- Part 2: Four Pillars Analysis ---
+            status_message_box.write("💪 Moving to Four Pillars (Eat, Sleep, Move, Recover) analysis...")
+            four_pillars_prompt = BASE_PROMPT_COMMON.format(
+                health_assessment_text=raw_health_assessment_input,
+                lab_report_section_placeholder=lab_report_section_formatted
+            ) + """
+--- Specific Instructions for Four Pillars Analysis ---
+🚨 **PILLAR-SPECIFIC CONTENT AND NAMING RULES - NON-NEGOTIABLE**:
+This is your most important rule for the `four_pillars` section.
+1.  **Fixed Pillar Names**: You MUST generate exactly four pillar objects. Their `name` fields MUST be exactly: `"Eat Well"`, `"Sleep Well"`, `"Move Well"`, and `"Recover Well"`.
+2.  **Contextual Recommendations - NO EMPTY ARRAYS**: When you are generating content for a specific pillar, you MUST fill ALL SIX recommendation arrays inside its `additional_guidance.structure`. You will do this by making the recommendations **relevant to the pillar's theme**. This is not optional.
+    * **For the "Eat Well" pillar**: `recommended_workouts` must be about workouts that aid digestion (e.g., "A gentle walk after meals"). `recommended_recovery_tips` must be about nutritional recovery (e.g., "Eat protein after a workout").
+    * **For the "Move Well" pillar**: `recommended_foods` must be about foods that fuel exercise (e.g., "Oatmeal for sustained energy"). `recommended_recovery_tips` must be about physical recovery from exercise (e.g., "Stretching or foam rolling").
+    * **For the "Sleep Well" pillar**: `recommended_foods` must be about foods that promote sleep (e.g., "Tart cherries for melatonin"). `recommended_workouts` must be about exercises that improve sleep (e.g., "Avoid intense exercise before bed").
+    * **For the "Recover Well" pillar**: `recommended_foods` must be about foods that help manage stress (e.g., "Foods rich in Vitamin C"). `recommended_workouts` must be about stress-reducing exercise (e.g., "Yoga or Tai Chi").
+""" + JSON_STRUCTURE_4PILLARS
+            full_prompts_for_debugging["Four Pillars Analysis Prompt"] = four_pillars_prompt
 
-        # --- POST-PROCESSING AND DISPLAY LOGIC ---
-        if analysis_data:
             try:
-                # --- Your existing validation logic ---
-                # Validate biomarker counts
-                if "lab_analysis" in analysis_data:
-                    lab_analysis = analysis_data["lab_analysis"]
-                    detailed_biomarkers = lab_analysis.get("detailed_biomarkers", [])
-                    biomarkers_count = len(detailed_biomarkers)
-                    if lab_analysis.get("biomarkers_tested_count") != biomarkers_count:
-                        st.warning(f"Correcting biomarker count mismatch.")
+                four_pillars_data_raw, raw_four_pillars_response = call_gemini_with_retry(four_pillars_prompt, model, generation_config)
+                # Directly update the final_combined_output with the raw JSON from Gemini
+                if four_pillars_data_raw:
+                    final_combined_output.update(four_pillars_data_raw)
+                all_raw_responses_for_debugging["Four Pillars Raw Response"] = raw_four_pillars_response
+                status_message_box.write("✅ Four Pillars analysis complete.")
+            except Exception as e:
+                status_message_box.error(f"Failed to analyze four pillars: {e}")
+                pass
+
+            # --- Part 3: Supplements and Action Items Analysis ---
+            status_message_box.write("💊 Moving to Supplements and Action Items analysis...")
+            supplements_actions_prompt = BASE_PROMPT_COMMON.format(
+                health_assessment_text=raw_health_assessment_input,
+                lab_report_section_placeholder=lab_report_section_formatted
+            ) + "--- Specific Instructions for Supplements and Action Items Analysis ---\n" + JSON_STRUCTURE_SUPPLEMENTS_ACTIONS
+            full_prompts_for_debugging["Supplements & Action Items Analysis Prompt"] = supplements_actions_prompt
+
+
+            try:
+                supplements_actions_data_raw, raw_supplements_actions_response = call_gemini_with_retry(supplements_actions_prompt, model, generation_config)
+                # Directly update the final_combined_output with the raw JSON from Gemini
+                if supplements_actions_data_raw:
+                    final_combined_output.update(supplements_actions_data_raw)
+                all_raw_responses_for_debugging["Supplements & Action Items Raw Response"] = raw_supplements_actions_response
+                status_message_box.write("✅ Supplements and Action Items analysis complete.")
+            except Exception as e:
+                status_message_box.error(f"Failed to analyze supplements and action items: {e}")
+                pass
+
+            # --- POST-PROCESSING AND DISPLAY LOGIC ---
+            status_message_box.write("✨ Finalizing analysis and preparing report...")
+            
+            # Perform validation/correction on the lab_analysis data within the final_combined_output
+            # This needs to be done *after* all updates are complete
+            if "lab_analysis" in final_combined_output and final_combined_output["lab_analysis"]:
+                lab_analysis = final_combined_output["lab_analysis"]
+                detailed_biomarkers = lab_analysis.get("detailed_biomarkers", [])
+                biomarkers_count = len(detailed_biomarkers)
+                
+                # Only correct if there's a mismatch or if it's currently 0 and should be higher
+                if lab_analysis.get("biomarkers_tested_count") != biomarkers_count:
+                    if lab_analysis.get("biomarkers_tested_count") is None or biomarkers_count > 0: # Avoid correcting 0 to 0
+                        status_message_box.warning(f"Correcting biomarker count in final output (was {lab_analysis.get('biomarkers_tested_count')}, now {biomarkers_count}).")
                         lab_analysis["biomarkers_tested_count"] = biomarkers_count
-                        # Recalculate summary counts
+                        # Recalculate summary counts if needed, based on the actual parsed biomarkers
                         optimal = sum(1 for bm in detailed_biomarkers if bm.get("status") == "optimal")
                         keep_in_mind = sum(1 for bm in detailed_biomarkers if bm.get("status") == "keep_in_mind")
                         attention = sum(1 for bm in detailed_biomarkers if bm.get("status") == "attention_needed")
-                        lab_analysis["biomarker_categories_summary"]["optimal_count"] = optimal
-                        lab_analysis["biomarker_categories_summary"]["keep_in_mind_count"] = keep_in_mind
-                        lab_analysis["biomarker_categories_summary"]["attention_needed_count"] = attention
-                
-                # --- Display the final, validated JSON ---
-                st.header("🔬 Your Personalized Bewell Analysis:")
-                st.json(analysis_data, expanded=True)
-
-            except Exception as e:
-                st.error(f"An error occurred during post-processing of the data: {e}")
-                st.write("Displaying the raw (but valid) JSON received:")
-                st.json(analysis_data)
-        else:
-            st.error(f"Analysis failed. Final error: {final_error_message}")
-
-        # --- Debugging Expanders ---
-        with st.expander("Show Final Raw Model Response (for debugging)"):
-            st.code(raw_response_for_debugging, language='text')
+                        if "biomarker_categories_summary" in lab_analysis:
+                            lab_analysis["biomarker_categories_summary"]["optimal_count"] = optimal
+                            lab_analysis["biomarker_categories_summary"]["keep_in_mind_count"] = keep_in_mind
+                            lab_analysis["biomarker_categories_summary"]["attention_needed_count"] = attention
             
-        with st.expander("Show Full Prompt Sent to AI (for debugging)"):
-            st.text(full_prompt)
+            # Final status update and display
+            if any(final_combined_output.values()): # Check if any of the sub-dictionaries are populated
+                status_message_box.update(label="Bewell Analysis Complete!", state="complete")
+                
+                # --- Display Interactive JSON ---
+                st.header("🔬 Your Personalized Bewell Analysis (Interactive JSON):")
+                st.json(final_combined_output, expanded=True)
+                
+                # --- Display Copyable Plain JSON ---
+                st.markdown("---") # Horizontal line for separation
+                st.header("📋 Copy Full JSON Output (Plain Text):")
+                # Convert the dictionary to a JSON string with pretty printing
+                plain_json_string = json.dumps(final_combined_output, indent=2)
+                st.text_area(
+                    "Select the text below and copy it to your clipboard:",
+                    plain_json_string,
+                    height=400 # Adjust height as needed
+                )
+            else:
+                status_message_box.error("❌ No analysis data could be generated. Please check the inputs and API key.")
+
+        # --- Single Combined Debugging Expander ---
+        with st.expander("Show All Debug Information (Raw Responses & Prompts)"):
+            combined_debug_output = []
+
+            combined_debug_output.append("--- START OF RAW MODEL RESPONSES ---\n\n")
+            for part_name, response_text in all_raw_responses_for_debugging.items():
+                combined_debug_output.append(f"--- {part_name} ---\n")
+                combined_debug_output.append(response_text)
+                combined_debug_output.append(f"\n--- END OF {part_name} ---\n\n")
+
+            combined_debug_output.append("\n--- START OF FULL PROMPTS SENT TO AI ---\n\n")
+            for prompt_name, prompt_text in full_prompts_for_debugging.items():
+                combined_debug_output.append(f"--- {prompt_name} ---\n")
+                combined_debug_output.append(prompt_text)
+                combined_debug_output.append(f"\n--- END OF {prompt_name} ---\n\n")
+
+            st.code("".join(combined_debug_output), language='text')
 
 
 if __name__ == "__main__":

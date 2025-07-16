@@ -456,7 +456,8 @@ This is your most important rule for the `four_pillars` section.
                 st.text_area(
                     "Select the text below and copy it to your clipboard:",
                     plain_json_string,
-                    height=400 # Adjust height as needed
+                    height=400, # Adjust height as needed
+                    disabled=True
                 )
             else:
                 status_message_box.error("❌ No analysis data could be generated. Please check the inputs and API key.")

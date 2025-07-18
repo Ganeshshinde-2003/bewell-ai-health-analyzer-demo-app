@@ -117,7 +117,7 @@ Adopt an approachable, empathetic, supportive, clear, and accessible tone. Alway
 
 4.  **Text Highlighting Rules**:
     • Use **C1[text]C1** to highlight your primary symptoms or critical action steps within descriptive text fields (e.g., "Your **C1[fatigue]C1** may be linked to...").
-    • Use **C2[text]C2** to highlight specific biomarker results, values, or alerts that require your attention (e.g., "...due to your **C2[high cortisol levels]C2**.").
+    • Use **C2[text]C2** to highlight specific biomarker results and their corresponding values. You should place the name and the value in two separate blocks, with a space in between (e.g., "...due to your **C2[high cortisol]C2** (**C2[20.3 ug/dL]C2**)...").
     • Apply these markers sparingly and only in descriptive text fields for clarity. Do NOT apply them to single-value fields like 'name' or 'result'.
 
 ---

@@ -109,13 +109,13 @@ Adopt an approachable, empathetic, supportive, clear, and accessible tone. Alway
 ---
 ⚠️ Critical Instructions & Output Format:
 1.  **JSON Output ONLY**: Generate ONE single, complete, and comprehensive JSON object that strictly follows the `JSON_STRUCTURE_DEFINITION` provided below. There must be NO other text, explanations, or markdown code blocks (```json ... ```) outside of this single JSON object.
-
-2.  **Comprehensive & Personalized Array Requirement**:
+2.  **NO EXTRA KEYS**: You MUST NOT generate any keys or objects that are not explicitly defined in the provided `JSON_STRUCTURE_DEFINITION`. Do NOT add any new keys on your own, such as "personal_information", "lab_reports", or anything similar.
+3.  **Comprehensive & Personalized Array Requirement**:
     • **NO GENERIC FILLERS**: It is critical that you AVOID generic, repetitive placeholder text like "General recommendation for women's health." Every item in every array must be a specific, actionable, and valuable piece of information.
     • **PRIORITIZE PERSONALIZATION**: You must make every effort to connect recommendations in arrays to the user's specific symptoms, habits, or biomarker data.
     • **USEFUL GENERAL ADVICE (LAST RESORT)**: If, after thorough analysis, there is truly NO data to personalize a specific point, you must provide a genuinely helpful and specific piece of general advice. Instead of "General workout," suggest "Try 30 minutes of brisk walking daily, as it's a great way to improve cardiovascular health and boost mood."
 
-3.  **Text Highlighting Rules**:
+4.  **Text Highlighting Rules**:
     • Use **C1[text]C1** to highlight your primary symptoms or critical action steps within descriptive text fields (e.g., "Your **C1[fatigue]C1** may be linked to...").
     • Use **C2[text]C2** to highlight specific biomarker results, values, or alerts that require your attention (e.g., "...due to your **C2[high cortisol levels]C2**.").
     • Apply these markers sparingly and only in descriptive text fields for clarity. Do NOT apply them to single-value fields like 'name' or 'result'.
@@ -177,19 +177,11 @@ JSON_STRUCTURE_4PILLARS = """
         "score": "integer - 1 (needs improvement) to 10 (great), based on your data (e.g., '4' for skipping meals).",
         "score_rationale": ["string - A clear explanation in simple language for why your score was given, tied to your data (e.g., ['Your Eat Well score is 4 because **C1[skipping meals]C1** means you miss energy.', 'Eating regularly helps your body stay strong.'])."],
         "why_it_matters": "string - Explains relevance to your data in simple terms (e.g., 'Good food helps balance your hormones for **C1[bloating]C1**, like fueling a car').",
-        "personalized_recommendations": ["string - Simple advice for you (e.g., 'Eat fiber-rich vegetables for your **C1[constipation]C1**')."],
         "root_cause_correlation": "string - Links to root causes in simple terms (e.g., 'Fiber helps your **C1[constipation]C1** caused by low estrogen').",
         "science_based_explanation": "string - Simple scientific basis (e.g., 'Fiber clears extra hormones to ease your **C1[mood swings]C1**, like cleaning out clutter').",
         "additional_guidance": {
           "description": "string - Explains guidance in simple terms, notes if general due to limited data (e.g., 'Since you provided no specific data, try these general tips for your health').",
-          "structure": {
-            "recommended_foods": [{"name": "string", "description": "string|null - Simple explanation (e.g., 'Vegetables help your digestion')"}],
-            "cautious_foods": [{"name": "string", "description": "string|null - Simple explanation (e.g., 'Avoid milk if it upsets your stomach')"}],
-            "recommended_workouts": [{"name": "string", "description": "string|null - Simple explanation (e.g., 'Walking boosts your energy')"}],
-            "avoid_habits_move": [{"name": "string", "description": "string|null - Simple explanation (e.g., 'Don’t sit too long to avoid feeling stiff')"}],
-            "recommended_recovery_tips": [{"name": "string", "description": "string|null - Simple explanation (e.g., 'Deep breathing calms your stress')"}],
-            "avoid_habits_rest_recover": [{"name": "string", "description": "string|null - Simple explanation (e.g., 'Avoid screens at night for your better sleep')"}]
-          }
+          "structure": "object - The keys in this object will vary based on the pillar, as per the instructions below. The values are arrays of objects. Example: `{'recommended_foods': [{'name': '...', 'description': '...'}]}`"
         }
       }
     ]
@@ -212,16 +204,6 @@ JSON_STRUCTURE_SUPPLEMENTS_ACTIONS = """
         }
       ],
       "conclusion": "string - Encourages you to stick to the advice and check with your doctor, in simple terms."
-    }
-  },
-  "action_plan": {
-    "description": "string - Summarizes actionable steps for you in simple terms (e.g., 'Here’s how to improve your **C1[energy]C1** and reduce your **C1[stress]C1**').",
-    "structure": {
-      "foods_to_enjoy": ["string - Simple food advice for you (e.g., 'Eat vegetables for your **C1[constipation]C1**')."],
-      "foods_to_limit": ["string - Simple foods for you to avoid (e.g., 'Limit milk for your **C1[stomach issues]C1**')."],
-      "daily_habits": ["string - Simple habits for you (e.g., 'Sleep 7-9 hours to balance your **C1[stress]C1**')."],
-      "rest_and_recovery": ["string - Simple recovery tips for you (e.g., 'Try meditation for your **C1[stress]C1**')."],
-      "movement": ["string - Simple workouts for you (e.g., 'Yoga for your **C1[stress]C1**')."]
     }
   }
 }
@@ -377,11 +359,11 @@ Here is the user's Lab Report text (potentially multiple reports combined):
 🚨 **PILLAR-SPECIFIC CONTENT AND NAMING RULES - NON-NEGOTIABLE**:
 This is your most important rule for the `four_pillars` section.
 1.  **Fixed Pillar Names**: You MUST generate exactly four pillar objects. Their `name` fields MUST be exactly: `"Eat Well"`, `"Sleep Well"`, `"Move Well"`, and `"Recover Well"`.
-2.  **Contextual Recommendations - NO EMPTY ARRAYS**: When you are generating content for a specific pillar, you MUST fill ALL SIX recommendation arrays inside its `additional_guidance.structure`. You will do this by making the recommendations **relevant to the pillar's theme**. This is not optional.
-    * **For the "Eat Well" pillar**: `recommended_workouts` must be about workouts that aid digestion (e.g., "A gentle walk after meals"). `recommended_recovery_tips` must be about nutritional recovery (e.g., "Eat protein after a workout").
-    * **For the "Move Well" pillar**: `recommended_foods` must be about foods that fuel exercise (e.g., "Oatmeal for sustained energy"). `recommended_recovery_tips` must be about physical recovery from exercise (e.g., "Stretching or foam rolling").
-    * **For the "Sleep Well" pillar**: `recommended_foods` must be about foods that promote sleep (e.g., "Tart cherries for melatonin"). `recommended_workouts` must be about exercises that improve sleep (e.g., "Avoid intense exercise before bed").
-    * **For the "Recover Well" pillar**: `recommended_foods` must be about foods that help manage stress (e.g., "Foods rich in Vitamin C"). `recommended_workouts` must be about stress-reducing exercise (e.g., "Yoga or Tai Chi").
+2.  **Omit Irrelevant Arrays**: You MUST only include the `additional_guidance.structure` keys that are relevant to the specific pillar.
+    * **For the "Eat Well" pillar**: Your `structure` object MUST ONLY contain the keys `"recommended_foods"` and `"cautious_foods"`. Do NOT include any other keys.
+    * **For the "Move Well" pillar**: Your `structure` object MUST ONLY contain the keys `"recommended_workouts"` and `"avoid_habits_move"`. Do NOT include any other keys.
+    * **For the "Sleep Well" pillar**: Your `structure` object MUST ONLY contain the keys `"recommended_recovery_tips"` and `"avoid_habits_rest_recover"`. Do NOT include any other keys.
+    * **For the "Recover Well" pillar**: Your `structure` object MUST ONLY contain the keys `"recommended_recovery_tips"` and `"avoid_habits_rest_recover"`. Do NOT include any other keys.
 """ + JSON_STRUCTURE_4PILLARS
             full_prompts_for_debugging["Four Pillars Analysis Prompt"] = four_pillars_prompt
 
@@ -397,7 +379,7 @@ This is your most important rule for the `four_pillars` section.
                 pass
 
             # --- Part 3: Supplements and Action Items Analysis ---
-            status_message_box.write("💊 Moving to Supplements and Action Items analysis...")
+            status_message_box.write("💊 Moving to Supplements analysis...")
             supplements_actions_prompt = BASE_PROMPT_COMMON.format(
                 health_assessment_text=raw_health_assessment_input,
                 lab_report_section_placeholder=lab_report_section_formatted
@@ -411,7 +393,7 @@ This is your most important rule for the `four_pillars` section.
                 if supplements_actions_data_raw:
                     final_combined_output.update(supplements_actions_data_raw)
                 all_raw_responses_for_debugging["Supplements & Action Items Raw Response"] = raw_supplements_actions_response
-                status_message_box.write("✅ Supplements and Action Items analysis complete.")
+                status_message_box.write("✅ Supplements analysis complete.")
             except Exception as e:
                 status_message_box.error(f"Failed to analyze supplements and action items: {e}")
                 pass

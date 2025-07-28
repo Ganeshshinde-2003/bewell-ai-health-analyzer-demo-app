@@ -1,38 +1,44 @@
 import streamlit as st
 import os
-import fitz  # PyMuPDF - for PDF
-import io  # To handle file bytes
-import pandas as pd  # for Excel and CSV
-from docx import Document  # for .docx files
-import json  # For JSON parsing
+import json # Import json to parse the secret string
+import fitz
+import io
+import pandas as pd
+from docx import Document
 import re
-import time # To add a small delay between retries
+import time
 
 # --- NEW: Vertex AI Imports ---
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part, HarmCategory, HarmBlockThreshold
+from google.oauth2 import service_account 
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Bewell AI Health Analyzer",
+    page_title="Bewell AI Health Analyzer - HIPPA by Vertex AI",
     page_icon="🌿",
     layout="wide"
 )
 
-# --- NEW: Vertex AI Configuration (replace API Key handling) ---
-# IMPORTANT: Replace "gen-lang-client-0208209080" with your actual Google Cloud Project ID
-PROJECT_ID = "gen-lang-client-0208209080"
-# IMPORTANT: Choose a region where Gemini 1.5 Pro is available. us-central1 is common.
-LOCATION = "us-central1" 
+PROJECT_ID = st.secrets.get("PROJECT_ID", "gen-lang-client-0208209080") # Replace with your actual project ID or keep the one from secrets
+LOCATION = st.secrets.get("LOCATION", "us-central1")
 
-# Initialize Vertex AI. This automatically uses credentials set up via `gcloud auth application-default login`.
-# This block runs only once when the Streamlit app starts.
 try:
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
-    st.success(f"Vertex AI initialized for project: {PROJECT_ID} in region: {LOCATION}")
+    credentials_json_string = st.secrets.get("google_credentials")
+
+    if not credentials_json_string:
+        st.error("Google Cloud credentials not found in Streamlit secrets. Please configure 'google_credentials'.")
+        st.stop()
+
+    credentials_dict = json.loads(credentials_json_string)
+    credentials = service_account.Credentials.from_service_account_info(credentials_dict)  # ✅ Use credentials directly
+
+    vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)  # ✅ No temp file, no metadata
+    st.success("✅ Vertex AI initialized successfully!")
+
 except Exception as e:
-    st.error(f"Failed to initialize Vertex AI. Please ensure `gcloud auth application-default login` has been run and your PROJECT_ID ('{PROJECT_ID}') is correct. Error: {e}")
-    st.stop() # Stop the app if Vertex AI can't be initialized
+    st.error(f"❌ Failed to initialize Vertex AI. Please check your Streamlit secrets and project settings.\n\nError: {e}")
+    st.stop()
 
 # The model name for Gemini 1.5 Pro on Vertex AI
 # Use "gemini-1.5-pro" for the stable version.
@@ -307,7 +313,7 @@ def main():
     """
     Main function to run the Bewell AI Health Analyzer Streamlit app.
     """
-    st.title("🌿 Bewell AI Health Analyzer")
+    st.title("🌿 Your Personal AI Health Assistant – HIPAA Secure by Bewell + Vertex AI")
     st.write("Upload your lab report(s) and health assessment files for a personalized analysis.")
 
     col1, col2 = st.columns(2)

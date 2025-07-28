@@ -7,7 +7,6 @@ import pandas as pd
 from docx import Document
 import re
 import time
-import tempfile 
 
 # --- NEW: Vertex AI Imports ---
 import vertexai
@@ -16,7 +15,7 @@ from google.oauth2 import service_account
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Bewell AI Health Analyzer",
+    page_title="Your Personal AI Health Assistant – HIPAA Secure by Bewell + Vertex AI",
     page_icon="🌿",
     layout="wide"
 )

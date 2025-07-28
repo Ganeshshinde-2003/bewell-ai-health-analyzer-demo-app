@@ -1,21 +1,86 @@
 import streamlit as st
-import google.generativeai as genai
 import os
-import fitz  # PyMuPDF - for PDF
-import io  # To handle file bytes
-import pandas as pd  # for Excel and CSV
-from docx import Document  # for .docx files
-import json
+import json # Import json to parse the secret string
+import fitz # PyMuPDF - for PDF
+import io # To handle file bytes
+import pandas as pd # for Excel and CSV
+from docx import Document # for .docx files
 import re
+import time # Added for retry delay
+
+# --- NEW: Vertex AI Imports ---
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part, HarmCategory, HarmBlockThreshold
+from google.oauth2 import service_account
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Bewell AI Monthly Health Reporter",
+    page_title="Bewell AI Monthly Health Reporter - HIPAA by Vertex AI", # Updated title
     page_icon="🗓️",
     layout="wide"
 )
 
+# --- Vertex AI Project and Location (from Streamlit Secrets) ---
+# IMPORTANT: Replace "gen-lang-client-0208209080" with your actual Google Cloud Project ID
+# or ensure it's set in your Streamlit secrets.
+PROJECT_ID = st.secrets.get("PROJECT_ID", "gen-lang-client-0208209080")
+LOCATION = st.secrets.get("LOCATION", "us-central1")
+
+# --- Vertex AI Initialization ---
+try:
+    # Attempt to retrieve credentials from Streamlit secrets
+    credentials_json_string = st.secrets.get("google_credentials")
+
+    if not credentials_json_string:
+        st.error("Google Cloud credentials not found in Streamlit secrets. Please configure 'google_credentials'.")
+        st.stop() # Stop the app if credentials are not found
+
+    # Parse the JSON string into a dictionary and create credentials object
+    credentials_dict = json.loads(credentials_json_string)
+    credentials = service_account.Credentials.from_service_account_info(credentials_dict)
+
+    # Initialize Vertex AI with the project, location, and credentials
+    vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
+    st.success("✅ Vertex AI initialized successfully!")
+
+except Exception as e:
+    # Display an error message if Vertex AI initialization fails
+    st.error(f"❌ Failed to initialize Vertex AI. Please check your Streamlit secrets and project settings.\n\nError: {e}")
+    st.stop() # Stop the app on initialization failure
+
+# --- Gemini Model Configuration for Vertex AI ---
+# Use a Vertex AI compatible model name. "gemini-1.5-flash-001" or "gemini-1.5-pro-001"
+# are generally stable choices. "gemini-2.5-flash-lite" might be a preview model.
+MODEL_NAME = "gemini-2.5-flash-lite" # Changed to a stable Vertex AI compatible model name for reliability
+
+# Configuration for how the Gemini model generates content
+generation_config = {
+    "temperature": 0.2, # Lower temperature for more deterministic (JSON) output
+    "top_p": 0.95,
+    "top_k": 64,
+    "max_output_tokens": 8192, # Increased token limit for potentially large JSON responses
+    "response_mime_type": "application/json", # CRITICAL: Instructs the model to output strict JSON
+}
+
+# Safety settings to block potentially harmful content
+safety_settings = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+}
+
+# Instantiate the Vertex AI Gemini Model globally.
+# This model object will be reused across all API calls, improving efficiency.
+model = GenerativeModel(MODEL_NAME, generation_config=generation_config, safety_settings=safety_settings)
+
+# --- End NEW Vertex AI Configuration ---
+
+
 # --- Text Extraction Function (Handles multiple file types) ---
+# Caching this function with @st.cache_data prevents re-running it if the input file
+# content hasn't changed, optimizing performance.
+@st.cache_data(show_spinner=False)
 def extract_text_from_file(uploaded_file):
     """
     Extracts text content from various file types (PDF, DOCX, XLSX, XLS, TXT, CSV)
@@ -72,36 +137,15 @@ def extract_text_from_file(uploaded_file):
         st.error(f"An error occurred while processing '{uploaded_file.name}': {e}")
         return "[Error Processing File]"
 
+    # Provide a warning if no text could be extracted from a non-text file type
     if not text.strip() and file_extension not in [".txt", ".csv"] and not text.startswith("["):
         st.warning(f"No readable text extracted from '{uploaded_file.name}'. The file might be scanned, empty, or have complex formatting. Consider pasting the text manually.")
 
     return text
 
-# --- API Key Handling ---
-api_key = "AIzaSyArQ9zeya1SO-IwsMappkLStXYT0W7WXfk" # Ensure your actual API key is handled securely
-if not api_key:
-    # This section is if you plan to use Streamlit Cloud secrets or environment variables
-    # For local development, directly assigning the key here is fine for testing.
-    # For deployment, remove the hardcoded key and rely on secrets/env vars.
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        st.warning("Please add your Google/Gemini API key to your environment variables (e.g., in a .env file as GOOGLE_API_KEY), Streamlit secrets, or paste it below.")
-        # Fallback to text input in the app if key is not found elsewhere
-        api_key = st.text_input("Or paste your Google/Gemini API Key here:", type="password")
-
-
-# --- Gemini Model Configuration ---
-model_name = "gemini-2.0-flash" # Use a fast model for this purpose
-
-generation_config = {
-    "temperature": 0.7,
-    "top_p": 0.95,
-    "top_k": 64,
-    "max_output_tokens": 8192,
-    "response_mime_type": "text/plain", # Request text/plain, but instruct AI to return JSON
-}
-
 # --- The Main Prompt Construction for Monthly Report ---
+# This multi-line string defines the role, tone, objective, and critical instructions
+# for the Gemini model to generate the monthly health report.
 MONTHLY_REPORT_PROMPT_INSTRUCTIONS = """
 Role: You are the Bewell AI Monthly Health Report Assistant, a holistic health expert focused on women’s hormonal balance, precision medicine, and root-cause insights.
 Tone: Empathetic, empowering, accessible, science-backed — never condescending. Avoid jargon.
@@ -119,8 +163,8 @@ Instructions for Output:
 - For fields specified as 'array of strings' (e.g., `tied_to_logs`, `likely_root_causes`), ensure each entry is a distinct string in the array. Do NOT combine multiple points into a single string. Each entry should be concise and focused on a single log or cause.
 
 **CRITICAL TEXT MARKING FOR HIGHLIGHTING**
-- Use **C1[text]C1** for critical information and action items in descriptive text fields only (e.g., **C1[fatigue]C1**, **C1[eat more fiber]C1**).
-- Use **C2[text]C2** for notable values or alerts in descriptive text fields only (e.g., **C2[low DHEA alert]C2**).
+- Use **C1[text]C1** to highlight critical information and action items in descriptive text fields only (e.g., **C1[fatigue]C1**, **C1[eat more fiber]C1**).
+- Use **C2[text]C2** to highlight notable values or alerts in descriptive text fields only (e.g., **C2[low DHEA alert]C2**).
 - Apply highlighting ONLY to: 'summary', 'health_reflection', 'score_or_message', 'tied_to_logs', 'likely_root_causes', 'Guidance' (in all pillars), 'explanation' (in root_cause_tags), 'food_to_enjoy', 'food_to_limit', 'rest_and_recovery', 'daily_habits', 'movements', 'behavior_goals', 'encouragement_message', 'key_behaviors' (in radar_chart_data).
 - Do NOT highlight: 'top_symptoms', 'did_well', 'areas_to_improve', 'recommendations', 'tag' (in root_cause_tags), 'radar_chart_data.scores', 'radar_chart_data.label', 'radar_chart_data.caption', or single-value fields like 'Estradiol'.
 - Apply sparingly for clarity (e.g., **C1[constipation]C1**, **C2[high stress]C2**).
@@ -139,6 +183,8 @@ The daily logs contain two sections:
 Here is the required JSON object structure:
 """
 
+# This multi-line string defines the precise JSON structure the Gemini model is expected to output.
+# It acts as a schema for the AI's response.
 MONTHLY_REPORT_JSON_STRUCTURE = """
 {
   "monthly_overview_summary": {
@@ -232,6 +278,48 @@ MONTHLY_REPORT_JSON_STRUCTURE = """
 }
 """
 
+# --- Modified call_gemini_with_retry for Vertex AI ---
+def call_gemini_with_retry(prompt, max_retries=3):
+    """
+    Calls the Vertex AI Gemini model with a prompt, handling retries for JSON errors.
+    Uses the globally defined 'model' object.
+    Returns parsed JSON data and the raw response string, or raises an exception.
+    """
+    raw_response_for_debugging = ""
+    for attempt in range(max_retries):
+        if attempt > 0:
+            st.info(f"Attempt {attempt + 1} for AI response is ongoing...")
+            time.sleep(2) # Small delay before retrying the call
+
+        try:
+            # Use the global 'model' directly
+            response = model.generate_content(prompt)
+            full_response_text = response.text
+            raw_response_for_debugging = full_response_text
+
+            if full_response_text:
+                cleaned_json_string = clean_json_string(full_response_text)
+                return json.loads(cleaned_json_string), raw_response_for_debugging
+            else:
+                raise ValueError("Model returned an empty response.")
+
+        except json.JSONDecodeError as e:
+            if attempt < max_retries - 1:
+                st.warning(f"Attempt {attempt + 1} failed (Invalid JSON). Retrying...")
+            else:
+                st.error(f"Attempt {attempt + 1} failed. Failed to get valid JSON after {max_retries} attempts: {e}")
+                # For debugging, show the raw response that caused the JSON error
+                st.code(raw_response_for_debugging, language='json', label="Raw response causing JSON error (for debugging)")
+                raise Exception(f"Failed to get valid JSON after {max_retries} attempts: {e}")
+        except Exception as e:
+            if attempt < max_retries - 1:
+                st.warning(f"Attempt {attempt + 1} failed (Unexpected error: {e}). Retrying...")
+            else:
+                st.error(f"Attempt {attempt + 1} failed. An unexpected error occurred after {max_retries} attempts: {e}")
+                raise
+    raise Exception("Max retries reached without a successful response.")
+
+
 def clean_json_string(json_string):
     """Removes leading/trailing markdown code blocks and illegal trailing commas from a string."""
     if not isinstance(json_string, str):
@@ -255,7 +343,7 @@ def clean_json_string(json_string):
 
 # --- Main Streamlit App ---
 def main():
-    st.title("Bewell AI Monthly Health Reporter-Final")
+    st.title("Bewell AI Monthly Health Reporter – HIPAA Secure by Bewell + Vertex AI") # Updated title
     st.write("Upload your monthly health data (daily logs, self-assessments) and optionally a previous lab report for a comprehensive monthly analysis.")
 
     # --- File Upload Section ---
@@ -270,35 +358,29 @@ def main():
 
     # --- Validate daily logs file is provided ---
     if not daily_logs:
-        st.error("Daily Logs file is required for the monthly report. Please upload a valid file.")
-        return
+        st.info("Daily Logs file is required for the monthly report. Please upload a valid file to proceed.")
+        st.stop()
 
     # --- Error Handling for File Processing ---
     if raw_daily_logs_text.startswith("[Error"):
         st.error(f"Error processing Daily Logs: {raw_daily_logs_text}")
-        return
+        st.stop() # Stop execution if critical file cannot be processed
 
     if raw_lab_report_text.startswith("[Error"):
         st.warning(f"Warning: Problem with Previous Lab Report: {raw_lab_report_text}")
         st.write("Continuing analysis without previous lab report data.")
-        raw_lab_report_text = ""
+        raw_lab_report_text = "" # Clear content if there was an error
 
     if raw_weekly_assessments_text.startswith("[Error"):
         st.warning(f"Warning: Problem with Weekly Self-Assessments: {raw_weekly_assessments_text}")
         st.write("Continuing analysis without weekly self-assessment data.")
-        raw_weekly_assessments_text = ""
+        raw_weekly_assessments_text = "" # Clear content if there was an error
 
     # --- Analyze Data and Display Results on Button Click---
-    if st.button("Generate Monthly Report"):
-        if not api_key:
-            st.error("Please provide a Google/Gemini API key to proceed.")
-            return
-
-        with st.spinner("Generating monthly report... (This may take a few moments)"):
+    if st.button("Generate Monthly Report ✨", type="primary"):
+        with st.status("Generating monthly report...", expanded=True) as status_message_box:
+            status_message_box.write("⚙️ Preparing data for AI analysis...")
             try:
-                genai.configure(api_key=api_key)
-                model = genai.GenerativeModel(model_name=model_name)
-
                 # Prepare data sections for the prompt
                 previous_lab_report_section = f"The user's initial health analysis from a prior lab report:\n{raw_lab_report_text}\n" if raw_lab_report_text else "No prior lab report data provided.\n"
                 daily_logs_section = f"The user’s daily logs on symptoms and lifestyle (eat/sleep/move/recover):\n{raw_daily_logs_text}\n"
@@ -311,36 +393,42 @@ def main():
                     weekly_assessments_data=weekly_assessments_section
                 ) + MONTHLY_REPORT_JSON_STRUCTURE
 
-                response = model.generate_content(prompt, generation_config=generation_config)
+                status_message_box.write("🧠 Sending data to Bewell AI (Vertex AI Gemini)...")
+                # Use the call_gemini_with_retry function
+                analysis_data, raw_response_for_debugging = call_gemini_with_retry(prompt)
 
                 # --- Process and Display Results ---
-                if response and response.text is not None:
-                    cleaned_json_string = clean_json_string(response.text)
-                    if cleaned_json_string.strip():
-                        try:
-                            analysis_data = json.loads(cleaned_json_string)
-                            st.header("✨ Your Personalized Bewell Monthly Health Report:")
-                            st.json(analysis_data)
-                             # Display raw response after JSON
-                            st.subheader("Raw Response from Gemini API (Post-Markdown Removal):")
-                            st.text(cleaned_json_string)
-                        except json.JSONDecodeError as e:
-                            st.error(f"Error: Failed to parse AI response as JSON. The response was not valid JSON: {e}")
-                            st.write("The model returned text, but it was not valid JSON. Here is the raw text from the AI to help with debugging:")
-                            st.text(response.text)
-                    else:
-                        st.error("Error: The model returned an empty response.")
-                elif response and response.prompt_feedback:
-                    st.error(f"Analysis request was blocked. Reason: {response.prompt_feedback.block_reason}")
-                    if response.prompt_feedback.safety_ratings:
-                        st.write(f"Safety Ratings: {response.prompt_feedback.safety_ratings}")
-                    st.write("Please review your input and try again.")
+                if analysis_data:
+                    # Removed 'icon' as it's not supported in older Streamlit versions for .update()
+                    status_message_box.update(label="Monthly Report Generated!", state="complete")
+                    st.header("✨ Your Personalized Bewell Monthly Health Report:")
+                    st.json(analysis_data, expanded=True) # Display interactive JSON
+
+                    st.markdown("---")
+                    st.header("📋 Copy Full JSON Output (Plain Text):")
+                    plain_json_string = json.dumps(analysis_data, indent=2)
+                    st.text_area(
+                        "Select the text below and copy it to your clipboard:",
+                        plain_json_string,
+                        height=400,
+                        disabled=True
+                    )
                 else:
-                    st.error("Error: Failed to generate a valid response from the model.")
+                    status_message_box.error("❌ No analysis data could be generated.")
 
             except Exception as e:
-                st.error(f"An unexpected error occurred: {e}")
-                st.write("Please check your API key, network connection, and input files.")
+                status_message_box.error(f"❌ An error occurred during report generation: {e}")
+                st.error("Please check your input files and ensure Vertex AI is correctly configured.")
+
+        # --- Debugging Information Expander (MOVED OUTSIDE st.status) ---
+        # This expander will now appear below the status message box after generation
+        # It's crucial that this block is NOT indented under the 'with st.status(...)'
+        # block, as that causes the "Expanders may not be nested" error.
+        with st.expander("Show Debug Information (Raw Response & Prompt)"):
+            st.subheader("Full Prompt Sent to Vertex AI:")
+            st.code(prompt, language='markdown') # Changed to markdown for better readability of prompt
+            st.subheader("Raw Response from Vertex AI (before JSON parsing):")
+            st.code(raw_response_for_debugging, language='json') # Use json language hint
 
 
 if __name__ == "__main__":

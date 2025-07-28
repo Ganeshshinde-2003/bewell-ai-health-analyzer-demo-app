@@ -15,7 +15,7 @@ from google.oauth2 import service_account
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Bewell AI Health Analyzer - HIPPA by Vertex AI",
+    page_title="Bewell AI Health Analyzer - HIPAA by Vertex AI",
     page_icon="🌿",
     layout="wide"
 )

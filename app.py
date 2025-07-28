@@ -29,6 +29,34 @@ LOCATION = "us-central1"
 # This block runs only once when the Streamlit app starts.
 # Initialize Vertex AI. This automatically uses credentials set up via `gcloud auth application-default login`.
 # This block runs only once when the Streamlit app starts.
+# --- TEMPORARY DEBUGGING BLOCK ---
+st.subheader("Debugging GCP Secret Loading")
+if "GCP_SERVICE_ACCOUNT_KEY" in st.secrets:
+    st.write("GCP_SERVICE_ACCOUNT_KEY secret detected!")
+    secret_value = st.secrets["GCP_SERVICE_ACCOUNT_KEY"]
+    st.text_area("Raw Secret Value (for debugging)", secret_value, height=200)
+
+    try:
+        key_dict = json.loads(secret_value)
+        st.success("JSON parsing successful for GCP_SERVICE_ACCOUNT_KEY!")
+        st.json(key_dict, expanded=False) # Show parsed JSON, but collapsed
+    except json.JSONDecodeError as e:
+        st.error(f"JSON Decode Error in secret: {e}")
+        # Try to pinpoint the exact character if possible
+        # This part might not always work perfectly for exact char, but provides context
+        error_pos = e.pos
+        if error_pos is not None and error_pos < len(secret_value):
+            st.error(f"Problem character/context near index {error_pos}: '{secret_value[max(0, error_pos-10):min(len(secret_value), error_pos+10)]}'")
+            st.code(f"Full problematic string excerpt around error:\n{secret_value[max(0, error_pos-50):min(len(secret_value), error_pos+50)]}", language="text")
+        st.stop() # Stop here if JSON parsing fails
+    except Exception as e:
+        st.error(f"Unexpected error loading GCP_SERVICE_ACCOUNT_KEY: {e}")
+        st.stop()
+else:
+    st.warning("GCP_SERVICE_ACCOUNT_KEY secret NOT detected. Running in local fallback mode (gcloud auth).")
+    secret_value = None # Ensure secret_value is defined for the next block
+# --- END TEMPORARY DEBUGGING BLOCK ---
+
 try:
     # Try to load credentials from Streamlit secrets first for deployment
     if "GCP_SERVICE_ACCOUNT_KEY" in st.secrets: # <--- THIS LINE DETECTS THE SECRET

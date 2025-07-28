@@ -27,10 +27,23 @@ LOCATION = "us-central1"
 
 # Initialize Vertex AI. This automatically uses credentials set up via `gcloud auth application-default login`.
 # This block runs only once when the Streamlit app starts.
+# Initialize Vertex AI. This automatically uses credentials set up via `gcloud auth application-default login`.
+# This block runs only once when the Streamlit app starts.
 try:
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
+    # Try to load credentials from Streamlit secrets first for deployment
+    if "GCP_SERVICE_ACCOUNT_KEY" in st.secrets: # <--- THIS LINE DETECTS THE SECRET
+        key_dict = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_KEY"])
+        vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=vertexai.credentials.from_service_account_info(key_dict))
+        # No st.success message for users
+    else:
+        # Fallback for local development (uses gcloud auth application-default login)
+        vertexai.init(project=PROJECT_ID, location=LOCATION)
+        # No st.success message for users
 except Exception as e:
-    st.error(f"Failed to initialize Vertex AI. Please check your Google Cloud project ID and location settings. Error: {e}")
+    st.error(f"Failed to initialize Vertex AI. Please ensure: "
+             f"1. For local: `gcloud auth application-default login` has been run. "
+             f"2. For deployment: `GCP_SERVICE_ACCOUNT_KEY` secret is correctly set in Streamlit Cloud. "
+             f"Error: {e}")
     st.stop() # Stop the app if Vertex AI can't be initialized
 
 # The model name for Gemini 1.5 Pro on Vertex AI

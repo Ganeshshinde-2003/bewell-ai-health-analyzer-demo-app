@@ -1,12 +1,13 @@
 import streamlit as st
 import os
-import fitz  # PyMuPDF - for PDF
-import io  # To handle file bytes
-import pandas as pd  # for Excel and CSV
-from docx import Document  # for .docx files
-import json  # For JSON parsing
+import json # Import json to parse the secret string
+import fitz
+import io
+import pandas as pd
+from docx import Document
 import re
-import time # To add a small delay between retries
+import time
+import tempfile 
 
 # --- NEW: Vertex AI Imports ---
 import vertexai
@@ -19,60 +20,41 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- NEW: Vertex AI Configuration (replace API Key handling) ---
-# IMPORTANT: Replace "gen-lang-client-0208209080" with your actual Google Cloud Project ID
-PROJECT_ID = "gen-lang-client-0208209080"
-# IMPORTANT: Choose a region where Gemini 1.5 Pro is available. us-central1 is common.
-LOCATION = "us-central1" 
+PROJECT_ID = st.secrets.get("PROJECT_ID", "gen-lang-client-0208209080") # Replace with your actual project ID or keep the one from secrets
+LOCATION = st.secrets.get("LOCATION", "us-central1")
 
-# Initialize Vertex AI. This automatically uses credentials set up via `gcloud auth application-default login`.
-# This block runs only once when the Streamlit app starts.
-# Initialize Vertex AI. This automatically uses credentials set up via `gcloud auth application-default login`.
-# This block runs only once when the Streamlit app starts.
-# --- TEMPORARY DEBUGGING BLOCK ---
-st.subheader("Debugging GCP Secret Loading")
-if "GCP_SERVICE_ACCOUNT_KEY" in st.secrets:
-    st.write("GCP_SERVICE_ACCOUNT_KEY secret detected!")
-    secret_value = st.secrets["GCP_SERVICE_ACCOUNT_KEY"]
-    st.text_area("Raw Secret Value (for debugging)", secret_value, height=200)
-
-    try:
-        key_dict = json.loads(secret_value)
-        st.success("JSON parsing successful for GCP_SERVICE_ACCOUNT_KEY!")
-        st.json(key_dict, expanded=False) # Show parsed JSON, but collapsed
-    except json.JSONDecodeError as e:
-        st.error(f"JSON Decode Error in secret: {e}")
-        # Try to pinpoint the exact character if possible
-        # This part might not always work perfectly for exact char, but provides context
-        error_pos = e.pos
-        if error_pos is not None and error_pos < len(secret_value):
-            st.error(f"Problem character/context near index {error_pos}: '{secret_value[max(0, error_pos-10):min(len(secret_value), error_pos+10)]}'")
-            st.code(f"Full problematic string excerpt around error:\n{secret_value[max(0, error_pos-50):min(len(secret_value), error_pos+50)]}", language="text")
-        st.stop() # Stop here if JSON parsing fails
-    except Exception as e:
-        st.error(f"Unexpected error loading GCP_SERVICE_ACCOUNT_KEY: {e}")
-        st.stop()
-else:
-    st.warning("GCP_SERVICE_ACCOUNT_KEY secret NOT detected. Running in local fallback mode (gcloud auth).")
-    secret_value = None # Ensure secret_value is defined for the next block
-# --- END TEMPORARY DEBUGGING BLOCK ---
+temp_key_file_path = None
 
 try:
-    # Try to load credentials from Streamlit secrets first for deployment
-    if "GCP_SERVICE_ACCOUNT_KEY" in st.secrets: # <--- THIS LINE DETECTS THE SECRET
-        key_dict = json.loads(st.secrets["GCP_SERVICE_ACCOUNT_KEY"])
-        vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=vertexai.credentials.from_service_account_info(key_dict))
-        # No st.success message for users
-    else:
-        # Fallback for local development (uses gcloud auth application-default login)
-        vertexai.init(project=PROJECT_ID, location=LOCATION)
-        # No st.success message for users
+    # Use the service account credentials from st.secrets
+    credentials_json_string = st.secrets.get("google_credentials")
+    if not credentials_json_string:
+        st.error("Google Cloud credentials not found in Streamlit secrets. Please configure 'google_credentials'.")
+        st.stop() # Stop the app if credentials are missing
+
+    # Parse the JSON string from secrets into a Python dictionary
+    credentials_dict = json.loads(credentials_json_string)
+    
+    # Write the service account JSON to a temporary file.
+    # vertexai.init() relies on GOOGLE_APPLICATION_CREDENTIALS environment variable
+    # pointing to a file for Application Default Credentials.
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as temp_key_file:
+        temp_key_file.write(json.dumps(credentials_dict))
+        temp_key_file_path = temp_key_file.name # Store path to delete later
+    
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_key_file_path
+
+    vertexai.init(project=PROJECT_ID, location=LOCATION)
+    st.success("Vertex AI initialized successfully!") # Added for debugging confirmation
 except Exception as e:
-    st.error(f"Failed to initialize Vertex AI. Please ensure: "
-             f"1. For local: `gcloud auth application-default login` has been run. "
-             f"2. For deployment: `GCP_SERVICE_ACCOUNT_KEY` secret is correctly set in Streamlit Cloud. "
-             f"Error: {e}")
+    st.error(f"Failed to initialize Vertex AI. Please check your Google Cloud project ID, location settings, and Streamlit secrets. Error: {e}")
     st.stop() # Stop the app if Vertex AI can't be initialized
+finally:
+    # Clean up the temporary file containing sensitive credentials
+    if temp_key_file_path and os.path.exists(temp_key_file_path):
+        os.remove(temp_key_file_path) # Important to clean up sensitive files
+        del os.environ["GOOGLE_APPLICATION_CREDENTIALS"] # Clean up the environment variable as well
+
 
 # The model name for Gemini 1.5 Pro on Vertex AI
 # Use "gemini-1.5-pro" for the stable version.
@@ -347,7 +329,7 @@ def main():
     """
     Main function to run the Bewell AI Health Analyzer Streamlit app.
     """
-    st.title("🌿 Bewell AI Health Analyzer - VERTEX AI")
+    st.title("🌿 Bewell AI Health Analyzer")
     st.write("Upload your lab report(s) and health assessment files for a personalized analysis.")
 
     col1, col2 = st.columns(2)

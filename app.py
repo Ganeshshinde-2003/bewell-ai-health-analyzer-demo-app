@@ -12,6 +12,7 @@ import tempfile
 # --- NEW: Vertex AI Imports ---
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part, HarmCategory, HarmBlockThreshold
+from google.oauth2 import service_account 
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -23,38 +24,22 @@ st.set_page_config(
 PROJECT_ID = st.secrets.get("PROJECT_ID", "gen-lang-client-0208209080") # Replace with your actual project ID or keep the one from secrets
 LOCATION = st.secrets.get("LOCATION", "us-central1")
 
-temp_key_file_path = None
-
 try:
-    # Use the service account credentials from st.secrets
     credentials_json_string = st.secrets.get("google_credentials")
+
     if not credentials_json_string:
         st.error("Google Cloud credentials not found in Streamlit secrets. Please configure 'google_credentials'.")
-        st.stop() # Stop the app if credentials are missing
+        st.stop()
 
-    # Parse the JSON string from secrets into a Python dictionary
     credentials_dict = json.loads(credentials_json_string)
-    
-    # Write the service account JSON to a temporary file.
-    # vertexai.init() relies on GOOGLE_APPLICATION_CREDENTIALS environment variable
-    # pointing to a file for Application Default Credentials.
-    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".json") as temp_key_file:
-        temp_key_file.write(json.dumps(credentials_dict))
-        temp_key_file_path = temp_key_file.name # Store path to delete later
-    
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = temp_key_file_path
+    credentials = service_account.Credentials.from_service_account_info(credentials_dict)  # ✅ Use credentials directly
 
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
-    st.success("Vertex AI initialized successfully!") # Added for debugging confirmation
+    vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)  # ✅ No temp file, no metadata
+    st.success("✅ Vertex AI initialized successfully!")
+
 except Exception as e:
-    st.error(f"Failed to initialize Vertex AI. Please check your Google Cloud project ID, location settings, and Streamlit secrets. Error: {e}")
-    st.stop() # Stop the app if Vertex AI can't be initialized
-finally:
-    # Clean up the temporary file containing sensitive credentials
-    if temp_key_file_path and os.path.exists(temp_key_file_path):
-        os.remove(temp_key_file_path) # Important to clean up sensitive files
-        del os.environ["GOOGLE_APPLICATION_CREDENTIALS"] # Clean up the environment variable as well
-
+    st.error(f"❌ Failed to initialize Vertex AI. Please check your Streamlit secrets and project settings.\n\nError: {e}")
+    st.stop()
 
 # The model name for Gemini 1.5 Pro on Vertex AI
 # Use "gemini-1.5-pro" for the stable version.

@@ -15,7 +15,7 @@ from google.oauth2 import service_account
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Your Personal AI Health Assistant – HIPAA Secure by Bewell + Vertex AI",
+    page_title="Bewell AI Health Analyzer - HIPPA by Vertex AI",
     page_icon="🌿",
     layout="wide"
 )
@@ -313,7 +313,7 @@ def main():
     """
     Main function to run the Bewell AI Health Analyzer Streamlit app.
     """
-    st.title("🌿 Bewell AI Health Analyzer")
+    st.title("🌿 Your Personal AI Health Assistant – HIPAA Secure by Bewell + Vertex AI")
     st.write("Upload your lab report(s) and health assessment files for a personalized analysis.")
 
     col1, col2 = st.columns(2)

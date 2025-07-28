@@ -1,5 +1,4 @@
 import streamlit as st
-import google.generativeai as genai
 import os
 import fitz  # PyMuPDF - for PDF
 import io  # To handle file bytes
@@ -9,6 +8,10 @@ import json  # For JSON parsing
 import re
 import time # To add a small delay between retries
 
+# --- NEW: Vertex AI Imports ---
+import vertexai
+from vertexai.generative_models import GenerativeModel, Part, HarmCategory, HarmBlockThreshold
+
 # --- Page Configuration ---
 st.set_page_config(
     page_title="Bewell AI Health Analyzer",
@@ -16,7 +19,53 @@ st.set_page_config(
     layout="wide"
 )
 
+# --- NEW: Vertex AI Configuration (replace API Key handling) ---
+# IMPORTANT: Replace "gen-lang-client-0208209080" with your actual Google Cloud Project ID
+PROJECT_ID = "gen-lang-client-0208209080"
+# IMPORTANT: Choose a region where Gemini 1.5 Pro is available. us-central1 is common.
+LOCATION = "us-central1" 
+
+# Initialize Vertex AI. This automatically uses credentials set up via `gcloud auth application-default login`.
+# This block runs only once when the Streamlit app starts.
+try:
+    vertexai.init(project=PROJECT_ID, location=LOCATION)
+    st.success(f"Vertex AI initialized for project: {PROJECT_ID} in region: {LOCATION}")
+except Exception as e:
+    st.error(f"Failed to initialize Vertex AI. Please ensure `gcloud auth application-default login` has been run and your PROJECT_ID ('{PROJECT_ID}') is correct. Error: {e}")
+    st.stop() # Stop the app if Vertex AI can't be initialized
+
+# The model name for Gemini 1.5 Pro on Vertex AI
+# Use "gemini-1.5-pro" for the stable version.
+# If you want the latest preview features (at your own risk), check Vertex AI documentation for current preview model names.
+MODEL_NAME = "gemini-2.5-flash-lite" 
+
+# --- Gemini Model Generation Configuration ---
+generation_config = {
+    "temperature": 0.2,  # Low for deterministic JSON
+    "top_p": 0.95,
+    "top_k": 64,
+    "max_output_tokens": 8192,  # Increased for large responses
+    "response_mime_type": "application/json"  # Ensures strict JSON
+}
+
+# --- Safety Settings (Recommended for production) ---
+safety_settings = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+}
+
+# Instantiate the Vertex AI Gemini Model globally.
+# This model object will be reused across all calls.
+model = GenerativeModel(MODEL_NAME, generation_config=generation_config, safety_settings=safety_settings)
+
+# --- End NEW Vertex AI Configuration ---
+
+
 # --- Text Extraction Function (Handles multiple file types) ---
+# @st.cache_data is okay here because file contents are hashable
+@st.cache_data(show_spinner=False)
 def extract_text_from_file(uploaded_file):
     """
     Extracts text content from various file types (PDF, DOCX, XLSX, XLS, TXT, CSV).
@@ -77,21 +126,51 @@ def extract_text_from_file(uploaded_file):
             f"No readable text extracted from '{uploaded_file.name}'. The file might be scanned, empty, or have complex formatting. Consider pasting the text manually.")
     return text
 
-# --- API Key Handling ---
-api_key = "AIzaSyBRFhGQJ3YOYZ8TZy7un0iwXhXfl2Ol8yQ" # Replace with your actual key or load from secrets
-if not api_key:
-  st.warning("Please add your Google/Gemini API key to Streamlit secrets or environment variables, or paste it below.")
-  api_key = st.text_input("Paste your Google/Gemini API Key here:", type="password")
+# --- Modified call_gemini_with_retry for Vertex AI ---
+# Removed @st.cache_data from here because the global 'model' is not cacheable as an argument.
+# The 'model' is loaded once globally.
+def call_gemini_with_retry(prompt, max_retries=3):
+    """
+    Calls the Vertex AI Gemini model with a prompt, handling retries for JSON errors.
+    Uses the globally defined 'model' object.
+    Returns parsed JSON data and the raw response string, or raises an exception.
+    """
+    # 'model' is already globally defined, no need to pass it or declare global here
+    raw_response_for_debugging = ""
+    for attempt in range(max_retries):
+        if attempt > 0:
+            st.info(f"Attempt {attempt + 1} is ongoing...")
+            time.sleep(1) # Small delay before retrying the call
 
-# --- Gemini Model Configuration ---
-model_name = "gemini-1.5-pro-latest" # Using a robust model
-generation_config = {
-    "temperature": 0.2,  # Low for deterministic JSON
-    "top_p": 0.95,
-    "top_k": 64,
-    "max_output_tokens": 8192,  # Increased for large responses
-    "response_mime_type": "application/json"  # Ensures strict JSON
-}
+        try:
+            # Use the global 'model' directly
+            response = model.generate_content(prompt) 
+            full_response_text = response.text
+            raw_response_for_debugging = full_response_text
+
+            if full_response_text:
+                cleaned_json_string = clean_json_string(full_response_text)
+                return json.loads(cleaned_json_string), raw_response_for_debugging
+            else:
+                raise ValueError("Model returned an empty response.")
+
+        except json.JSONDecodeError as e:
+            if attempt < max_retries - 1:
+                st.warning(f"Attempt {attempt + 1} failed (Invalid JSON). Retrying...")
+                time.sleep(2)  # Wait 2 seconds before retrying
+            else:
+                st.error(f"Attempt {attempt + 1} failed. Failed to get valid JSON after {max_retries} attempts: {e}")
+                # For debugging, show the raw response that caused the JSON error
+                st.code(raw_response_for_debugging, language='json', label="Raw response causing JSON error (for debugging)")
+                raise Exception(f"Failed to get valid JSON after {max_retries} attempts: {e}")
+        except Exception as e:
+            if attempt < max_retries - 1:
+                st.warning(f"Attempt {attempt + 1} failed (Unexpected error: {e}). Retrying...")
+                time.sleep(2)
+            else:
+                st.error(f"Attempt {attempt + 1} failed. An unexpected error occurred after {max_retries} attempts: {e}")
+                raise
+    raise Exception("Max retries reached without a successful response.")
 
 # --- Base Prompt Instructions (Common to all calls) ---
 BASE_PROMPT_COMMON = """
@@ -222,44 +301,6 @@ def clean_json_string(json_string):
     
     return stripped_string
 
-def call_gemini_with_retry(prompt, model, generation_config, max_retries=3):
-    """
-    Calls the Gemini model with a prompt, handling retries for JSON errors.
-    Returns parsed JSON data or raises an exception.
-    """
-    raw_response_for_debugging = ""
-    for attempt in range(max_retries):
-        if attempt > 0: # Only show "ongoing" for retries, not the first attempt
-            st.info(f"Attempt {attempt + 1} is ongoing...")
-            time.sleep(1) # Small delay before retrying the call
-
-        try:
-            response_stream = model.generate_content(prompt, stream=True)
-            full_response_text = "".join(chunk.text for chunk in response_stream if chunk.text)
-            raw_response_for_debugging = full_response_text
-
-            if full_response_text:
-                cleaned_json_string = clean_json_string(full_response_text)
-                return json.loads(cleaned_json_string), raw_response_for_debugging
-            else:
-                raise ValueError("Model returned an empty response.")
-
-        except json.JSONDecodeError as e:
-            if attempt < max_retries - 1:
-                st.warning(f"Attempt {attempt + 1} failed (Invalid JSON). Retrying...")
-                time.sleep(2)  # Wait 2 seconds before retrying
-            else:
-                st.error(f"Attempt {attempt + 1} failed. Failed to get valid JSON after {max_retries} attempts: {e}")
-                raise Exception(f"Failed to get valid JSON after {max_retries} attempts: {e}")
-        except Exception as e:
-            if attempt < max_retries - 1:
-                st.warning(f"Attempt {attempt + 1} failed (Unexpected error: {e}). Retrying...")
-                time.sleep(2)
-            else:
-                st.error(f"Attempt {attempt + 1} failed. An unexpected error occurred after {max_retries} attempts: {e}")
-                raise
-    # This line should technically not be reached if exceptions are always raised on final failure
-    raise Exception("Max retries reached without a successful response.")
 
 # --- Main Streamlit App ---
 def main():
@@ -287,9 +328,7 @@ def main():
         st.stop()
         
     if st.button("Analyze My Data ✨", type="primary"):
-        if not api_key:
-            st.error("🚨 Please provide a Google/Gemini API key in the sidebar to proceed.")
-            st.stop()
+        # No API key check needed here, as vertexai.init handles authentication
 
         # Process uploaded files
         raw_lab_report_inputs = []
@@ -316,9 +355,6 @@ Here is the user's Lab Report text (potentially multiple reports combined):
         else:
             lab_report_section_formatted = "No Lab Report text was provided. Analysis will be based solely on Health Assessment data."
         
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name=model_name, generation_config=generation_config)
-        
         # Initialize the final output dictionary as empty
         final_combined_output = {}
         
@@ -338,16 +374,15 @@ Here is the user's Lab Report text (potentially multiple reports combined):
             full_prompts_for_debugging["Biomarkers Analysis Prompt"] = biomarker_prompt
 
             try:
-                biomarker_data_raw, raw_biomarker_response = call_gemini_with_retry(biomarker_prompt, model, generation_config)
-                # Directly update the final_combined_output with the raw JSON from Gemini
+                # Call call_gemini_with_retry without passing the model object
+                biomarker_data_raw, raw_biomarker_response = call_gemini_with_retry(biomarker_prompt) 
                 if biomarker_data_raw:
                     final_combined_output.update(biomarker_data_raw) 
                 all_raw_responses_for_debugging["Biomarkers Raw Response"] = raw_biomarker_response
                 status_message_box.write("✅ Biomarker analysis complete.")
             except Exception as e:
                 status_message_box.error(f"Failed to analyze biomarkers: {e}")
-                # For robustness, we will continue even if one part fails, but note the error
-                pass
+                pass # Continue to the next section even if one fails
 
             # --- Part 2: Four Pillars Analysis ---
             status_message_box.write("💪 Moving to Four Pillars (Eat, Sleep, Move, Recover) analysis...")
@@ -368,15 +403,15 @@ This is your most important rule for the `four_pillars` section.
             full_prompts_for_debugging["Four Pillars Analysis Prompt"] = four_pillars_prompt
 
             try:
-                four_pillars_data_raw, raw_four_pillars_response = call_gemini_with_retry(four_pillars_prompt, model, generation_config)
-                # Directly update the final_combined_output with the raw JSON from Gemini
+                # Call call_gemini_with_retry without passing the model object
+                four_pillars_data_raw, raw_four_pillars_response = call_gemini_with_retry(four_pillars_prompt)
                 if four_pillars_data_raw:
                     final_combined_output.update(four_pillars_data_raw)
                 all_raw_responses_for_debugging["Four Pillars Raw Response"] = raw_four_pillars_response
                 status_message_box.write("✅ Four Pillars analysis complete.")
             except Exception as e:
                 status_message_box.error(f"Failed to analyze four pillars: {e}")
-                pass
+                pass # Continue to the next section even if one fails
 
             # --- Part 3: Supplements and Action Items Analysis ---
             status_message_box.write("💊 Moving to Supplements analysis...")
@@ -388,15 +423,15 @@ This is your most important rule for the `four_pillars` section.
 
 
             try:
-                supplements_actions_data_raw, raw_supplements_actions_response = call_gemini_with_retry(supplements_actions_prompt, model, generation_config)
-                # Directly update the final_combined_output with the raw JSON from Gemini
+                # Call call_gemini_with_retry without passing the model object
+                supplements_actions_data_raw, raw_supplements_actions_response = call_gemini_with_retry(supplements_actions_prompt)
                 if supplements_actions_data_raw:
                     final_combined_output.update(supplements_actions_data_raw)
                 all_raw_responses_for_debugging["Supplements & Action Items Raw Response"] = raw_supplements_actions_response
                 status_message_box.write("✅ Supplements analysis complete.")
             except Exception as e:
                 status_message_box.error(f"Failed to analyze supplements and action items: {e}")
-                pass
+                pass # Continue to the next section even if one fails
 
             # --- POST-PROCESSING AND DISPLAY LOGIC ---
             status_message_box.write("✨ Finalizing analysis and preparing report...")
@@ -442,7 +477,7 @@ This is your most important rule for the `four_pillars` section.
                     disabled=True
                 )
             else:
-                status_message_box.error("❌ No analysis data could be generated. Please check the inputs and API key.")
+                status_message_box.error("❌ No analysis data could be generated. Please check the inputs and ensure Vertex AI is correctly configured.")
 
         # --- Single Combined Debugging Expander ---
         with st.expander("Show All Debug Information (Raw Responses & Prompts)"):

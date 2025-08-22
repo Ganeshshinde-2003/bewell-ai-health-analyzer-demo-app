@@ -20,10 +20,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- Vertex AI Project and Location (from Streamlit Secrets) ---
-# IMPORTANT: Replace "gen-lang-client-0208209080" with your actual Google Cloud Project ID
-# or ensure it's set in your Streamlit secrets.
-PROJECT_ID = st.secrets.get("PROJECT_ID", "gen-lang-client-0208209080")
+PROJECT_ID = st.secrets.get("PROJECT_ID")
 LOCATION = st.secrets.get("LOCATION", "us-central1")
 
 # --- Vertex AI Initialization ---

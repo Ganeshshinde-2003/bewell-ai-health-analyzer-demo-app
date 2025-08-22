@@ -20,7 +20,7 @@ st.set_page_config(
     layout="wide"
 )
 
-PROJECT_ID = st.secrets.get("PROJECT_ID", "gen-lang-client-0208209080") # Replace with your actual project ID or keep the one from secrets
+PROJECT_ID = st.secrets.get("PROJECT_ID") # Replace with your actual project ID or keep the one from secrets
 LOCATION = st.secrets.get("LOCATION", "us-central1")
 
 try:

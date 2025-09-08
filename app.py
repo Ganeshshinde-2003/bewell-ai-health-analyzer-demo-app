@@ -7,10 +7,11 @@ import pandas as pd
 from docx import Document
 import re
 import time
+import jsonschema
 
 # --- NEW: Vertex AI Imports ---
 import vertexai
-from vertexai.generative_models import GenerativeModel, Part, HarmCategory, HarmBlockThreshold
+from vertexai.generative_models import GenerativeModel, HarmCategory, HarmBlockThreshold
 from google.oauth2 import service_account 
 
 # --- Page Configuration ---
@@ -45,6 +46,14 @@ except Exception as e:
 # If you want the latest preview features (at your own risk), check Vertex AI documentation for current preview model names.
 MODEL_NAME = "gemini-2.5-flash-lite" 
 
+# --- Safety Settings (Recommended for production) ---
+safety_settings = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+}
+
 # --- Gemini Model Generation Configuration ---
 generation_config = {
     "temperature": 0.2,  # Low for deterministic JSON
@@ -52,14 +61,6 @@ generation_config = {
     "top_k": 64,
     "max_output_tokens": 8192,  # Increased for large responses
     "response_mime_type": "application/json"  # Ensures strict JSON
-}
-
-# --- Safety Settings (Recommended for production) ---
-safety_settings = {
-    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
-    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
 }
 
 # Instantiate the Vertex AI Gemini Model globally.
@@ -132,52 +133,6 @@ def extract_text_from_file(uploaded_file):
             f"No readable text extracted from '{uploaded_file.name}'. The file might be scanned, empty, or have complex formatting. Consider pasting the text manually.")
     return text
 
-# --- Modified call_gemini_with_retry for Vertex AI ---
-# Removed @st.cache_data from here because the global 'model' is not cacheable as an argument.
-# The 'model' is loaded once globally.
-def call_gemini_with_retry(prompt, max_retries=3):
-    """
-    Calls the Vertex AI Gemini model with a prompt, handling retries for JSON errors.
-    Uses the globally defined 'model' object.
-    Returns parsed JSON data and the raw response string, or raises an exception.
-    """
-    # 'model' is already globally defined, no need to pass it or declare global here
-    raw_response_for_debugging = ""
-    for attempt in range(max_retries):
-        if attempt > 0:
-            st.info(f"Attempt {attempt + 1} is ongoing...")
-            time.sleep(1) # Small delay before retrying the call
-
-        try:
-            # Use the global 'model' directly
-            response = model.generate_content(prompt) 
-            full_response_text = response.text
-            raw_response_for_debugging = full_response_text
-
-            if full_response_text:
-                cleaned_json_string = clean_json_string(full_response_text)
-                return json.loads(cleaned_json_string), raw_response_for_debugging
-            else:
-                raise ValueError("Model returned an empty response.")
-
-        except json.JSONDecodeError as e:
-            if attempt < max_retries - 1:
-                st.warning(f"Attempt {attempt + 1} failed (Invalid JSON). Retrying...")
-                time.sleep(2)  # Wait 2 seconds before retrying
-            else:
-                st.error(f"Attempt {attempt + 1} failed. Failed to get valid JSON after {max_retries} attempts: {e}")
-                # For debugging, show the raw response that caused the JSON error
-                st.code(raw_response_for_debugging, language='json', label="Raw response causing JSON error (for debugging)")
-                raise Exception(f"Failed to get valid JSON after {max_retries} attempts: {e}")
-        except Exception as e:
-            if attempt < max_retries - 1:
-                st.warning(f"Attempt {attempt + 1} failed (Unexpected error: {e}). Retrying...")
-                time.sleep(2)
-            else:
-                st.error(f"Attempt {attempt + 1} failed. An unexpected error occurred after {max_retries} attempts: {e}")
-                raise
-    raise Exception("Max retries reached without a successful response.")
-
 # --- Base Prompt Instructions (Common to all calls) ---
 BASE_PROMPT_COMMON = """
 Role & Persona:
@@ -200,13 +155,19 @@ Never use alarming or fear-based language. Always frame recommendations as empow
 3. **Comprehensive & Personalized Array Requirement**:
    • **NO GENERIC FILLERS**: Avoid generic placeholder text. Every item in every array must be personalized, actionable, and tied to the user’s actual data.  
    • **USEFUL GENERAL ADVICE ONLY IF NEEDED**: If no personalization is possible, give specific, practical advice (e.g., “Try 30 minutes of brisk walking daily to help balance hormones and improve energy.”).
-
-
 4. **Text Highlighting Rules**:
    • Use **C1[text]C1** to highlight primary symptoms or critical action steps within descriptive text.  
    • Use **C2[text]C2** for specific biomarker results and values (e.g., “Your **C2[high cortisol]C2** (**C2[20.3 ug/dL]C2**) may be affecting your sleep.”).  
    • Do NOT use these markers in single-value fields like ‘name’ or ‘result.’
 
+⚠️ ABSOLUTELY NO EXTRA KEYS OR OBJECTS
+You must only generate a single JSON object that matches the exact structure shown in the active `JSON_STRUCTURE_DEFINITION` below.  
+- Do NOT add any extra keys, arrays, objects, fields, sections, or nesting at any level.  
+- The output must include ONLY the keys, arrays, and objects shown in the provided structure.  
+- If you provide keys such as "supplements", "recommendation", "lab_reports", or any section not listed in the definition, your response is incorrect and will be rejected.
+- No summary, explanation, or markdown code block should be present anywhere outside of the single allowed JSON object.
+
+Your answer must be a valid JSON object and **match the provided structure exactly**. If your answer contains any extra, missing, or differently named keys, it will be rejected by the system.
 
 ---
 🧠 Core Analysis & Content Requirements:
@@ -319,6 +280,92 @@ JSON_STRUCTURE_SUPPLEMENTS_ACTIONS = """
 }
 """
 
+JSON_STRUCTURE_BIOMARKERS = """
+{
+  "lab_analysis": {
+    "overall_summary": "string",
+    "biomarkers_tested_count": "integer",
+    "biomarker_categories_summary": {
+      "description_text": "string",
+      "optimal_count": "integer",
+      "keep_in_mind_count": "integer",
+      "attention_needed_count": "integer"
+    },
+    "detailed_biomarkers": [
+      {
+        "name": "string",
+        "status": "string",
+        "status_label": "string",
+        "result": "string",
+        "range": "string",
+        "cycle_impact": "string",
+        "why_it_matters": "string"
+      }
+    ],
+    "crucial_biomarkers_to_measure": [
+      {
+        "name": "string",
+        "importance": "string"
+      }
+    ],
+    "health_recommendation_summary": ["string"]
+  }
+}
+"""
+
+JSON_STRUCTURE_4PILLARS = """
+{
+  "four_pillars": {
+    "introduction": "string",
+    "pillars": [
+      {
+        "name": "string",
+        "score": "integer",
+        "score_rationale": ["string"],
+        "why_it_matters": "string",
+        "root_cause_correlation": "string",
+        "science_based_explanation": "string",
+        "additional_guidance": {
+          "description": "string",
+          "structure": {}
+        }
+      }
+    ]
+  }
+}
+"""
+
+JSON_STRUCTURE_SUPPLEMENTS_ACTIONS = """
+{
+  "supplements": {
+    "description": "string",
+    "structure": {
+      "recommendations": [
+        {
+          "name": "string",
+          "rationale": "string",
+          "expected_outcomes": "string",
+          "dosage_and_timing": "string",
+          "situational_cyclical_considerations": "string"
+        }
+      ],
+      "conclusion": "string"
+    }
+  }
+}
+"""
+
+schema_biomarkers = json.loads(JSON_STRUCTURE_BIOMARKERS)
+schema_4pillars = json.loads(JSON_STRUCTURE_4PILLARS)
+schema_supplements = json.loads(JSON_STRUCTURE_SUPPLEMENTS_ACTIONS)
+
+def validate_json(data, schema):
+    try:
+        jsonschema.validate(instance=data, schema=schema)
+        return True, ""
+    except jsonschema.ValidationError as e:
+        return False, e.message
+
 def clean_json_string(json_string):
     """Removes markdown code blocks and attempts to fix common JSON errors."""
     if not isinstance(json_string, str):
@@ -332,13 +379,65 @@ def clean_json_string(json_string):
     
     return stripped_string
 
+# --- Modified call_gemini_with_retry for Vertex AI ---
+# Removed @st.cache_data from here because the global 'model' is not cacheable as an argument.
+# The 'model' is loaded once globally.
+def call_gemini_with_retry(prompt, schema, max_retries=3):
+    """
+    Calls the Vertex AI Gemini model with a prompt, handling retries for JSON errors.
+    Uses the globally defined 'model' object.
+    Returns parsed JSON data and the raw response string, or raises an exception.
+    """
+    # 'model' is already globally defined, no need to pass it or declare global here
+    raw_response_for_debugging = ""
+    for attempt in range(max_retries):
+        if attempt > 0:
+            st.info(f"Attempt {attempt + 1} is ongoing...")
+            time.sleep(1) # Small delay before retrying the call
+
+        try:
+            # Use the global 'model' directly
+            response = model.generate_content(prompt) 
+            full_response_text = response.text
+            raw_response_for_debugging = full_response_text
+
+            if not full_response_text:
+                raise ValueError("Model returned an empty response.")
+
+            cleaned_json_string = clean_json_string(full_response_text)
+            data = json.loads(cleaned_json_string)
+
+            is_valid, err_msg = validate_json(data, schema)
+            if is_valid:
+                return data, raw_response_for_debugging
+            else:
+                st.warning(f"JSON validation failed: {err_msg}")
+
+        except json.JSONDecodeError as e:
+            if attempt < max_retries - 1:
+                st.warning(f"Attempt {attempt + 1} failed (Invalid JSON). Retrying...")
+                time.sleep(2)  # Wait 2 seconds before retrying
+            else:
+                st.error(f"Attempt {attempt + 1} failed. Failed to get valid JSON after {max_retries} attempts: {e}")
+                # For debugging, show the raw response that caused the JSON error
+                st.code(raw_response_for_debugging, language='json', label="Raw response causing JSON error (for debugging)")
+                raise Exception(f"Failed to get valid JSON after {max_retries} attempts: {e}")
+        except Exception as e:
+            if attempt < max_retries - 1:
+                st.warning(f"Attempt {attempt + 1} failed (Unexpected error: {e}). Retrying...")
+                time.sleep(2)
+            else:
+                st.error(f"Attempt {attempt + 1} failed. An unexpected error occurred after {max_retries} attempts: {e}")
+                raise
+    raise Exception("Max retries reached without a successful response.")
+
 
 # --- Main Streamlit App ---
 def main():
     """
     Main function to run the Bewell AI Health Analyzer Streamlit app.
     """
-    st.title("🌿 Your Personal AI Health Assistant – HIPAA Secure by Bewell + Vertex AI")
+    st.title("🌿 Your Personal AI Health Assistant – HIPAA Secure by Bewell + Vertex AI (PV+2)")
     st.write("Upload your lab report(s) and health assessment files for a personalized analysis.")
 
     col1, col2 = st.columns(2)
@@ -406,7 +505,7 @@ Here is the user's Lab Report text (potentially multiple reports combined):
 
             try:
                 # Call call_gemini_with_retry without passing the model object
-                biomarker_data_raw, raw_biomarker_response = call_gemini_with_retry(biomarker_prompt) 
+                biomarker_data_raw, raw_biomarker_response = call_gemini_with_retry(biomarker_prompt, schema_biomarkers) 
                 if biomarker_data_raw:
                     final_combined_output.update(biomarker_data_raw) 
                 all_raw_responses_for_debugging["Biomarkers Raw Response"] = raw_biomarker_response
@@ -435,7 +534,7 @@ This is your most important rule for the `four_pillars` section.
 
             try:
                 # Call call_gemini_with_retry without passing the model object
-                four_pillars_data_raw, raw_four_pillars_response = call_gemini_with_retry(four_pillars_prompt)
+                four_pillars_data_raw, raw_four_pillars_response = call_gemini_with_retry(four_pillars_prompt, schema_4pillars)
                 if four_pillars_data_raw:
                     final_combined_output.update(four_pillars_data_raw)
                 all_raw_responses_for_debugging["Four Pillars Raw Response"] = raw_four_pillars_response
@@ -449,13 +548,30 @@ This is your most important rule for the `four_pillars` section.
             supplements_actions_prompt = BASE_PROMPT_COMMON.format(
                 health_assessment_text=raw_health_assessment_input,
                 lab_report_section_placeholder=lab_report_section_formatted
-            ) + "--- Specific Instructions for Supplements and Action Items Analysis ---\n" + JSON_STRUCTURE_SUPPLEMENTS_ACTIONS
+            ) + """
+--- Supplements Output Instructions ---
+
+🔒 STRICT OUTPUT REQUIREMENTS:
+- Your output MUST be ONLY ONE JSON object matching exactly the provided `JSON_STRUCTURE_SUPPLEMENTS_ACTIONS`.
+- You MUST NOT include any other keys, sections, or objects besides what is defined in `JSON_STRUCTURE_SUPPLEMENTS_ACTIONS`.
+- DO NOT mention or include any information about biomarkers, lab analyses, four pillars, lifestyle, or anything outside supplements.
+- DO NOT add explanations, summaries, or markdown.
+- Respond ONLY with the complete supplements JSON object.
+
+📌 CONTENT FOCUS:
+- Provide supplement advice strictly based on the user’s provided health assessment and lab data.
+- Every recommendation must be actionable, personalized, and clearly linked to the user’s data.
+- Use the given JSON keys only: `description`, `structure` with `recommendations` array (each item has `name`, `rationale`, `expected_outcomes`, `dosage_and_timing`, and `situational_cyclical_considerations`), plus `conclusion`.
+
+--- END INSTRUCTIONS ---
+
+""" + JSON_STRUCTURE_SUPPLEMENTS_ACTIONS
             full_prompts_for_debugging["Supplements & Action Items Analysis Prompt"] = supplements_actions_prompt
 
 
             try:
                 # Call call_gemini_with_retry without passing the model object
-                supplements_actions_data_raw, raw_supplements_actions_response = call_gemini_with_retry(supplements_actions_prompt)
+                supplements_actions_data_raw, raw_supplements_actions_response = call_gemini_with_retry(supplements_actions_prompt, schema_supplements)
                 if supplements_actions_data_raw:
                     final_combined_output.update(supplements_actions_data_raw)
                 all_raw_responses_for_debugging["Supplements & Action Items Raw Response"] = raw_supplements_actions_response

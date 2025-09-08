@@ -1,97 +1,285 @@
 import streamlit as st
-import google.generativeai as genai
 import os
-import fitz  # PyMuPDF - for PDF
-import io  # To handle file bytes
-import pandas as pd  # for Excel and CSV
-from docx import Document  # for .docx files
-import json  # For JSON parsing
+import json
+import fitz
+import io
+import pandas as pd
+from docx import Document
 import re
-import time # To add a small delay between retries
+import time
 
-# --- Page Configuration ---
+# --- Vertex AI imports ---
+import vertexai
+from vertexai.generative_models import GenerativeModel, HarmCategory, HarmBlockThreshold
+from google.oauth2 import service_account
+
+# Page config
 st.set_page_config(
-    page_title="Bewell AI Health Analyzer",
+    page_title="Bewell AI Health Analyzer - HIPAA by Vertex AI - VP1",
     page_icon="🌿",
     layout="wide"
 )
 
-# --- Text Extraction Function (Handles multiple file types) ---
+PROJECT_ID = st.secrets.get("PROJECT_ID")
+LOCATION = st.secrets.get("LOCATION", "us-central1")
+
+try:
+    credentials_json_string = st.secrets.get("google_credentials")
+
+    if not credentials_json_string:
+        st.error("Google Cloud credentials not found in Streamlit secrets. Please configure 'google_credentials'.")
+        st.stop()
+
+    credentials_dict = json.loads(credentials_json_string)
+    credentials = service_account.Credentials.from_service_account_info(credentials_dict)
+
+    vertexai.init(project=PROJECT_ID, location=LOCATION, credentials=credentials)
+    st.success("✅ Vertex AI initialized successfully!")
+
+except Exception as e:
+    st.error(f"❌ Failed to initialize Vertex AI. Please check your Streamlit secrets and project settings.\n\nError: {e}")
+    st.stop()
+
+MODEL_NAME = "gemini-2.5-flash-lite"
+
+# Safety settings for production
+safety_settings = {
+    HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+    HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_MEDIUM_AND_ABOVE,
+}
+
+RESPONSE_SCHEMA_BIOMARKERS = {
+    "type":"object",
+    "properties":{
+        "lab_analysis":{
+            "type":"object",
+            "properties":{
+                "overall_summary":{"type":"string"},
+                "biomarkers_tested_count":{"type":"integer"},
+                "biomarker_categories_summary":{
+                    "type":"object",
+                    "properties":{
+                        "description_text":{"type":"string"},
+                        "optimal_count":{"type":"integer"},
+                        "keep_in_mind_count":{"type":"integer"},
+                        "attention_needed_count":{"type":"integer"}
+                    },
+                    "required":["description_text","optimal_count","keep_in_mind_count","attention_needed_count"],
+                    "additionalProperties": False
+                },
+                "detailed_biomarkers":{
+                    "type":"array",
+                    "items":{
+                        "type":"object",
+                        "properties":{
+                            "name":{"type":"string"},
+                            "status":{"type":"string"},
+                            "status_label":{"type":"string"},
+                            "result":{"type":"string"},
+                            "range":{"type":"string"},
+                            "cycle_impact":{"type":"string"},
+                            "why_it_matters":{"type":"string"}
+                        },
+                        "required":["name","status","status_label","result","range","cycle_impact","why_it_matters"],
+                        "additionalProperties": False
+                    }
+                },
+                "crucial_biomarkers_to_measure":{
+                    "type":"array",
+                    "items":{
+                        "type":"object",
+                        "properties":{
+                            "name":{"type":"string"},
+                            "importance":{"type":"string"}
+                        },
+                        "required":["name","importance"],
+                        "additionalProperties": False
+                    }
+                },
+                "health_recommendation_summary":{
+                    "type":"array",
+                    "items":{"type":"string"}
+                }
+            },
+            "required":["overall_summary","biomarkers_tested_count","biomarker_categories_summary","detailed_biomarkers","crucial_biomarkers_to_measure","health_recommendation_summary"],
+            "additionalProperties": False
+        }
+    },
+    "required":["lab_analysis"],
+    "additionalProperties": False
+}
+
+RESPONSE_SCHEMA_4PILLARS = {
+    "type":"object",
+    "properties":{
+        "four_pillars":{
+            "type":"object",
+            "properties":{
+                "introduction":{"type":"string"},
+                "pillars":{
+                    "type":"array",
+                    "items":{
+                        "type":"object",
+                        "properties":{
+                            "name":{"type":"string"},
+                            "score":{"type":"integer"},
+                            "score_rationale":{
+                                "type":"array",
+                                "items":{"type":"string"}
+                            },
+                            "why_it_matters":{"type":"string"},
+                            "root_cause_correlation":{"type":"string"},
+                            "science_based_explanation":{"type":"string"},
+                            "additional_guidance":{
+                                "type":"object",
+                                "properties":{
+                                    "description":{"type":"string"},
+                                    "structure":{"type":"object"}
+                                },
+                                "required":["description","structure"],
+                                "additionalProperties": True
+                            }
+                        },
+                        "required":["name","score","score_rationale","why_it_matters","root_cause_correlation","science_based_explanation","additional_guidance"],
+                        "additionalProperties": False
+                    }
+                }
+            },
+            "required":["introduction","pillars"],
+            "additionalProperties": False
+        }
+    },
+    "required":["four_pillars"],
+    "additionalProperties": False
+}
+
+RESPONSE_SCHEMA_SUPPLEMENTS = {
+    "type":"object",
+    "properties":{
+        "supplements":{
+            "type":"object",
+            "properties":{
+                "description":{"type":"string"},
+                "structure":{
+                    "type":"object",
+                    "properties":{
+                        "recommendations":{
+                            "type":"array",
+                            "items":{
+                                "type":"object",
+                                "properties":{
+                                    "name":{"type":"string"},
+                                    "rationale":{"type":"string"},
+                                    "expected_outcomes":{"type":"string"},
+                                    "dosage_and_timing":{"type":"string"},
+                                    "situational_cyclical_considerations":{"type":"string"}
+                                },
+                                "required":["name","rationale","expected_outcomes","dosage_and_timing","situational_cyclical_considerations"],
+                                "additionalProperties": False
+                            }
+                        },
+                        "conclusion":{"type":"string"}
+                    },
+                    "required":["recommendations","conclusion"],
+                    "additionalProperties": False
+                }
+            },
+            "required":["description","structure"],
+            "additionalProperties": False
+        }
+    },
+    "required":["supplements"],
+    "additionalProperties": False
+}
+
+def build_generation_config(schema_dict):
+    return {
+        "temperature": 0.2,
+        "top_p": 0.95,
+        "top_k": 64,
+        "max_output_tokens": 8192,
+        "response_mime_type": "application/json",
+        "response_schema": schema_dict
+    }
+
+@st.cache_data(show_spinner=False)
 def extract_text_from_file(uploaded_file):
-    """
-    Extracts text content from various file types (PDF, DOCX, XLSX, XLS, TXT, CSV).
-    Returns extracted text as a string or an error marker.
-    """
     if uploaded_file is None:
         return ""
-
     file_extension = os.path.splitext(uploaded_file.name)[1].lower()
     text = ""
-
     try:
         file_bytes = uploaded_file.getvalue()
         if file_extension == ".pdf":
-            try:
-                pdf_document = fitz.open(stream=file_bytes, filetype="pdf")
-                for page_num in range(pdf_document.page_count):
-                    page = pdf_document.load_page(page_num)
-                    text += page.get_text("text") + "\n"
-                pdf_document.close()
-            except Exception as e:
-                st.error(f"Error processing PDF file: {e}")
-                return "[Error Processing PDF File]"
-
+            pdf_document = fitz.open(stream=file_bytes, filetype="pdf")
+            for page_num in range(pdf_document.page_count):
+                page = pdf_document.load_page(page_num)
+                text += page.get_text("text") + "\n"
+            pdf_document.close()
         elif file_extension == ".docx":
-            try:
-                doc = Document(io.BytesIO(file_bytes))
-                for para in doc.paragraphs:
-                    text += para.text + "\n"
-            except Exception as e:
-                st.error(f"Error processing DOCX file: {e}")
-                return "[Error Processing DOCX File]"
-
+            doc = Document(io.BytesIO(file_bytes))
+            for para in doc.paragraphs:
+                text += para.text + "\n"
         elif file_extension in [".xlsx", ".xls"]:
-            try:
-                excel_data = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
-                for sheet_name, df in excel_data.items():
-                    text += f"--- Sheet: {sheet_name} ---\n"
-                    text += df.to_string(index=False) + "\n\n"
-            except Exception as excel_e:
-                st.warning(
-                    f"Could not read Excel file '{uploaded_file.name}'. Ensure 'openpyxl' (for .xlsx) or 'xlrd' (for .xls) is installed. Error: {excel_e}")
-                return f"[Could not automatically process Excel file {uploaded_file.name} - Please try pasting the text or saving as PDF/TXT.]"
-
+            excel_data = pd.read_excel(io.BytesIO(file_bytes), sheet_name=None)
+            for sheet_name, df in excel_data.items():
+                text += f"--- Sheet: {sheet_name} ---\n"
+                text += df.to_string(index=False) + "\n\n"
         elif file_extension in [".txt", ".csv"]:
             text = file_bytes.decode('utf-8', errors='ignore')
-
         else:
             st.warning(f"Unsupported file type: {file_extension} for file '{uploaded_file.name}'")
             return "[Unsupported File Type Uploaded]"
-
     except Exception as e:
         st.error(f"An error occurred while processing '{uploaded_file.name}': {e}")
         return "[Error Processing File]"
-
     if not text.strip() and file_extension not in [".txt", ".csv"]:
-        st.warning(
-            f"No readable text extracted from '{uploaded_file.name}'. The file might be scanned, empty, or have complex formatting. Consider pasting the text manually.")
+        st.warning(f"No readable text extracted from '{uploaded_file.name}'. The file might be scanned, empty, or have complex formatting. Consider pasting the text manually.")
     return text
 
-# --- API Key Handling ---
-api_key = "AIzaSyBRFhGQJ3YOYZ8TZy7un0iwXhXfl2Ol8yQ" # Replace with your actual key or load from secrets
-if not api_key:
-  st.warning("Please add your Google/Gemini API key to Streamlit secrets or environment variables, or paste it below.")
-  api_key = st.text_input("Paste your Google/Gemini API Key here:", type="password")
+def clean_json_string(json_string):
+    if not isinstance(json_string, str):
+        return json_string
+    stripped_string = re.sub(r'^``````\s*$', '', json_string.strip(), flags=re.MULTILINE)
+    stripped_string = re.sub(r',\s*}', '}', stripped_string)
+    stripped_string = re.sub(r',\s*]', ']', stripped_string)
+    return stripped_string
 
-# --- Gemini Model Configuration ---
-model_name = "gemini-1.5-pro-latest" # Using a robust model
-generation_config = {
-    "temperature": 0.2,  # Low for deterministic JSON
-    "top_p": 0.95,
-    "top_k": 64,
-    "max_output_tokens": 8192,  # Increased for large responses
-    "response_mime_type": "application/json"  # Ensures strict JSON
-}
+def call_gemini_with_retry(prompt, schema_dict, max_retries=3):
+    raw_response = ""
+    for attempt in range(max_retries):
+        if attempt > 0:
+            st.info(f"Attempt {attempt + 1} is ongoing...")
+            time.sleep(1)
+        try:
+            generation_config = build_generation_config(schema_dict)
+            model = GenerativeModel(MODEL_NAME, generation_config=generation_config, safety_settings=safety_settings)
+            response = model.generate_content(prompt)
+            raw_response = response.text
+
+            if raw_response:
+                cleaned_str = clean_json_string(raw_response)
+                return json.loads(cleaned_str), raw_response
+            else:
+                raise ValueError("Model returned an empty response.")
+        except json.JSONDecodeError as e:
+            if attempt < max_retries - 1:
+                st.warning(f"Attempt {attempt + 1} failed (Invalid JSON). Retrying...")
+                time.sleep(2) 
+            else:
+                st.error(f"Attempt {attempt + 1} failed. JSON decode Error: {e}")
+                st.code(raw_response, language="json", label="Raw response causing JSON error")
+                raise Exception(f"Failed JSON decode after {max_retries} attempts: {e}")
+        except Exception as e:
+            if attempt < max_retries - 1:
+                st.warning(f"Attempt {attempt + 1} failed (Unexpected error: {e}). Retrying...")
+                time.sleep(2)
+            else:
+                st.error(f"Attempt {attempt + 1} failed. Unexpected error: {e}")
+                raise
+    raise Exception("Maximum retries reached without success.")
 
 # --- Base Prompt Instructions (Common to all calls) ---
 BASE_PROMPT_COMMON = """
@@ -99,7 +287,9 @@ Role & Persona:
 You are the Bewell AI Assistant. Your persona is a blend of a holistic women's health expert, a functional medicine practitioner, and a precision medicine specialist, with a dedicated focus on women's care.
 
 Tone & Voice:
-Adopt an approachable, empathetic, supportive, clear, and accessible tone. Always speak directly to the user using "you" and "your." Use simple, beginner-friendly language and relatable analogies, as if you are explaining complex health concepts to someone with no prior health knowledge. Avoid technical jargon, and if a term is necessary, define it in simple, everyday words.
+Adopt an approachable, empathetic, supportive, clear, and accessible tone. Always speak directly to the user using "you" and "your." Use simple, beginner-friendly language and relatable analogies, as if you are explaining complex health concepts to someone with no prior health knowledge. Avoid technical jargon, and if a term is necessary, define it in simple, everyday words.  
+Never use alarming or fear-based language. Always frame recommendations as empowering guidance focused on women’s health and well-being.
+
 
 ---
 🔑 Your Input Data:
@@ -108,28 +298,57 @@ Adopt an approachable, empathetic, supportive, clear, and accessible tone. Alway
 
 ---
 ⚠️ Critical Instructions & Output Format:
-1.  **JSON Output ONLY**: Generate ONE single, complete, and comprehensive JSON object that strictly follows the `JSON_STRUCTURE_DEFINITION` provided below. There must be NO other text, explanations, or markdown code blocks (```json ... ```) outside of this single JSON object.
-2.  **NO EXTRA KEYS**: You MUST NOT generate any keys or objects that are not explicitly defined in the provided `JSON_STRUCTURE_DEFINITION`. Do NOT add any new keys on your own, such as "personal_information", "lab_reports", or anything similar.
-3.  **Comprehensive & Personalized Array Requirement**:
-    • **NO GENERIC FILLERS**: It is critical that you AVOID generic, repetitive placeholder text like "General recommendation for women's health." Every item in every array must be a specific, actionable, and valuable piece of information.
-    • **PRIORITIZE PERSONALIZATION**: You must make every effort to connect recommendations in arrays to the user's specific symptoms, habits, or biomarker data.
-    • **USEFUL GENERAL ADVICE (LAST RESORT)**: If, after thorough analysis, there is truly NO data to personalize a specific point, you must provide a genuinely helpful and specific piece of general advice. Instead of "General workout," suggest "Try 30 minutes of brisk walking daily, as it's a great way to improve cardiovascular health and boost mood."
+1. **JSON Output ONLY**: Generate ONE single, complete, and comprehensive JSON object that strictly follows the `JSON_STRUCTURE_DEFINITION` provided below. There must be NO other text, explanations, or markdown code blocks (``````) outside of this single JSON object.
+2. **NO EXTRA KEYS**: You MUST NOT generate any keys or objects that are not explicitly defined in the provided `JSON_STRUCTURE_DEFINITION`.
+3. **Comprehensive & Personalized Array Requirement**:
+   • **NO GENERIC FILLERS**: Avoid generic placeholder text. Every item in every array must be personalized, actionable, and tied to the user’s actual data.  
+   • **USEFUL GENERAL ADVICE ONLY IF NEEDED**: If no personalization is possible, give specific, practical advice (e.g., “Try 30 minutes of brisk walking daily to help balance hormones and improve energy.”).
+4. **Text Highlighting Rules**:
+   • Use **C1[text]C1** to highlight primary symptoms or critical action steps within descriptive text.  
+   • Use **C2[text]C2** for specific biomarker results and values (e.g., “Your **C2[high cortisol]C2** (**C2[20.3 ug/dL]C2**) may be affecting your sleep.”).  
+   • Do NOT use these markers in single-value fields like ‘name’ or ‘result.’
 
-4.  **Text Highlighting Rules**:
-    • Use **C1[text]C1** to highlight your primary symptoms or critical action steps within descriptive text fields (e.g., "Your **C1[fatigue]C1** may be linked to...").
-    • Use **C2[text]C2** to highlight specific biomarker results and their corresponding values. You should place the name and the value in two separate blocks, with a space in between (e.g., "...due to your **C2[high cortisol]C2** (**C2[20.3 ug/dL]C2**)...").
-    • Apply these markers sparingly and only in descriptive text fields for clarity. Do NOT apply them to single-value fields like 'name' or 'result'.
+⚠️ ABSOLUTELY NO EXTRA KEYS OR OBJECTS
+You must only generate a single JSON object that matches the exact structure shown in the active `JSON_STRUCTURE_DEFINITION` below.  
+- Do NOT add any extra keys, arrays, objects, fields, sections, or nesting at any level.  
+- The output must include ONLY the keys, arrays, and objects shown in the provided structure.  
+- If you provide keys such as "supplements", "recommendation", "lab_reports", or any section not listed in the definition, your response is incorrect and will be rejected.
+- No summary, explanation, or markdown code block should be present anywhere outside of the single allowed JSON object.
+
+Your answer must be a valid JSON object and **match the provided structure exactly**. If your answer contains any extra, missing, or differently named keys, it will be rejected by the system.
 
 ---
 🧠 Core Analysis & Content Requirements:
 
-1.  **Explicit Women-Specific Condition Guidance**: If your biomarkers or symptoms strongly suggest a common women-specific health condition (e.g., irregular cycles and high testosterone suggesting PCOS; heavy periods and low iron suggesting anemia), you should clearly and gently educate the user about the possibility in simple terms.
 
-2.  **Holistic & Functional Medicine Integration**: Clearly explain how different aspects of your health are interconnected. Identify and explain potential underlying functional root causes in simple terms (e.g., "The health of your gut can directly affect your hormones and mood, similar to how a traffic jam on a main road can affect a whole city.").
+1. **Women-First Biomarker Analysis**  
+   Every biomarker explanation must explicitly connect to women’s health, such as menstrual cycles, energy, fertility, weight, skin, mood, and longevity. Example: “TSH is slightly elevated, which can affect your energy levels, weight, and menstrual regularity.”
 
-3.  **Strong Educational Empowerment**: Provide the "why" behind every recommendation. Use simple scientific explanations to empower the user with knowledge (e.g., "Eating more fiber helps your body get rid of extra estrogen that can contribute to your **C1[bloating]C1**.").
 
-4.  **Personalization is Key**: Every piece of analysis, rationale, and recommendation must be explicitly and clearly tied back to the user's provided data (symptoms, diagnoses, biomarkers).
+2. **Optimal vs Clinical Ranges**  
+   Evaluate biomarkers against both standard reference ranges and functional *optimal ranges for women*.  
+   - Estradiol, Progesterone, LH, and FSH → assess relative to cycle phase (follicular, ovulatory, luteal).  
+   - Thyroid function (TSH, Free T3, Free T4) → flag subclinical changes when symptoms suggest impact.  
+   - Iron/ferritin → highlight women’s optimal ranges, noting earlier risks for fatigue and hair loss.  
+
+
+3. **Cycle-Phase Sensitivity**  
+   If menstrual cycle phase is provided → interpret hormone results accordingly.  
+   If not provided → explain how values may shift depending on cycle phase and suggest retesting at key points (“Consider retesting progesterone 7 days after ovulation for best accuracy.”).  
+
+
+4. **Symptom-Biomarker Linking**  
+   Every flagged biomarker must reference user’s reported symptoms. Example: “Your low estradiol may be contributing to your **C1[mood swings]C1** and **C1[irregular cycles]C1**.”  
+
+
+5. **Empowering Educational Explanations**  
+   Clearly explain the “why” behind guidance. Use simple analogies (e.g., “Think of cortisol as your body’s stress alarm—if it stays on too long, it can wear down your energy like a phone that never fully charges.”).  
+
+
+6. **Precision Testing Guidance**  
+   Provide specific, proactive retesting recommendations.  
+   Example: “Retest Progesterone in mid-luteal phase (about day 21 of a 28-day cycle) to confirm support for a healthy luteal phase.”  
+   Example: “If Ferritin remains below 50, retest after 3 months of dietary iron support.”  
 """
 
 # --- JSON Structure Definitions for each part ---
@@ -209,64 +428,9 @@ JSON_STRUCTURE_SUPPLEMENTS_ACTIONS = """
 }
 """
 
-def clean_json_string(json_string):
-    """Removes markdown code blocks and attempts to fix common JSON errors."""
-    if not isinstance(json_string, str):
-        return json_string
-    # Remove markdown code blocks
-    stripped_string = re.sub(r'^```json\s*|```\s*$', '', json_string.strip(), flags=re.MULTILINE)
-    
-    # Remove illegal trailing commas
-    stripped_string = re.sub(r',\s*}', '}', stripped_string)
-    stripped_string = re.sub(r',\s*]', ']', stripped_string)
-    
-    return stripped_string
 
-def call_gemini_with_retry(prompt, model, generation_config, max_retries=3):
-    """
-    Calls the Gemini model with a prompt, handling retries for JSON errors.
-    Returns parsed JSON data or raises an exception.
-    """
-    raw_response_for_debugging = ""
-    for attempt in range(max_retries):
-        if attempt > 0: # Only show "ongoing" for retries, not the first attempt
-            st.info(f"Attempt {attempt + 1} is ongoing...")
-            time.sleep(1) # Small delay before retrying the call
-
-        try:
-            response_stream = model.generate_content(prompt, stream=True)
-            full_response_text = "".join(chunk.text for chunk in response_stream if chunk.text)
-            raw_response_for_debugging = full_response_text
-
-            if full_response_text:
-                cleaned_json_string = clean_json_string(full_response_text)
-                return json.loads(cleaned_json_string), raw_response_for_debugging
-            else:
-                raise ValueError("Model returned an empty response.")
-
-        except json.JSONDecodeError as e:
-            if attempt < max_retries - 1:
-                st.warning(f"Attempt {attempt + 1} failed (Invalid JSON). Retrying...")
-                time.sleep(2)  # Wait 2 seconds before retrying
-            else:
-                st.error(f"Attempt {attempt + 1} failed. Failed to get valid JSON after {max_retries} attempts: {e}")
-                raise Exception(f"Failed to get valid JSON after {max_retries} attempts: {e}")
-        except Exception as e:
-            if attempt < max_retries - 1:
-                st.warning(f"Attempt {attempt + 1} failed (Unexpected error: {e}). Retrying...")
-                time.sleep(2)
-            else:
-                st.error(f"Attempt {attempt + 1} failed. An unexpected error occurred after {max_retries} attempts: {e}")
-                raise
-    # This line should technically not be reached if exceptions are always raised on final failure
-    raise Exception("Max retries reached without a successful response.")
-
-# --- Main Streamlit App ---
 def main():
-    """
-    Main function to run the Bewell AI Health Analyzer Streamlit app.
-    """
-    st.title("🌿 Bewell AI Health Analyzer")
+    st.title("🌿 Your Personal AI Health Assistant – HIPAA Secure by Bewell + Vertex AI (PV+2)")
     st.write("Upload your lab report(s) and health assessment files for a personalized analysis.")
 
     col1, col2 = st.columns(2)
@@ -285,182 +449,70 @@ def main():
     if not health_assessment_file:
         st.info("Please upload a health assessment file to begin.")
         st.stop()
-        
-    if st.button("Analyze My Data ✨", type="primary"):
-        if not api_key:
-            st.error("🚨 Please provide a Google/Gemini API key in the sidebar to proceed.")
-            st.stop()
 
-        # Process uploaded files
-        raw_lab_report_inputs = []
+    if st.button("Analyze My Data ✨", type="primary"):
+        raw_lab_texts = []
         if lab_report_files:
             for file in lab_report_files:
                 extracted_text = extract_text_from_file(file)
                 if "[Error" in extracted_text or "[Unsupported" in extracted_text:
                     st.warning(f"Problem with Lab Report '{file.name}': {extracted_text}")
                 else:
-                    raw_lab_report_inputs.append(f"--- Start Lab Report: {file.name} ---\n{extracted_text}\n--- End Lab Report: {file.name} ---")
-        combined_lab_report_text = "\n\n".join(raw_lab_report_inputs)
+                    raw_lab_texts.append(f"--- Start Lab Report: {file.name} ---\n{extracted_text}\n--- End Lab Report: {file.name} ---")
 
-        raw_health_assessment_input = extract_text_from_file(health_assessment_file)
-        if "[Error" in raw_health_assessment_input:
-            st.error(f"Critical Error processing Health Assessment: {raw_health_assessment_input}")
+        combined_lab_report_text = "\n\n".join(raw_lab_texts)
+
+        raw_health_assessment = extract_text_from_file(health_assessment_file)
+        if "[Error" in raw_health_assessment:
+            st.error(f"Critical Error processing Health Assessment: {raw_health_assessment}")
             st.stop()
 
-        lab_report_section_formatted = ""
-        if combined_lab_report_text:
-            lab_report_section_formatted = f"""
+        lab_report_section = f"""
 Here is the user's Lab Report text (potentially multiple reports combined):
 {combined_lab_report_text}
-"""
-        else:
-            lab_report_section_formatted = "No Lab Report text was provided. Analysis will be based solely on Health Assessment data."
-        
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel(model_name=model_name, generation_config=generation_config)
-        
-        # Initialize the final output dictionary as empty
-        final_combined_output = {}
-        
-        all_raw_responses_for_debugging = {}
-        full_prompts_for_debugging = {} # Store prompts for debugging
+""" if combined_lab_report_text else "No Lab Report text was provided. Analysis will be based solely on Health Assessment data."
 
-        # Use st.status for overall progress
-        with st.status("Initiating Bewell Analysis...", expanded=True) as status_message_box:
-            status_message_box.write("⚙️ Preparing data for analysis...")
+        # Biomarkers
+        biomarker_prompt = BASE_PROMPT_COMMON.format(
+            health_assessment_text=raw_health_assessment,
+            lab_report_section_placeholder=lab_report_section
+        ) + "--- Specific Instructions for Biomarker Analysis ---\n" + JSON_STRUCTURE_BIOMARKERS
+        biomarker_data, biomarker_raw = call_gemini_with_retry(biomarker_prompt, RESPONSE_SCHEMA_BIOMARKERS)
 
-            # --- Part 1: Biomarkers Analysis ---
-            status_message_box.write("🔬 Analyzing Biomarkers...")
-            biomarker_prompt = BASE_PROMPT_COMMON.format(
-                health_assessment_text=raw_health_assessment_input,
-                lab_report_section_placeholder=lab_report_section_formatted
-            ) + "--- Specific Instructions for Biomarker Analysis ---\n" + JSON_STRUCTURE_BIOMARKERS
-            full_prompts_for_debugging["Biomarkers Analysis Prompt"] = biomarker_prompt
+        # Four Pillars
+        four_pillars_prompt = BASE_PROMPT_COMMON.format(
+            health_assessment_text=raw_health_assessment,
+            lab_report_section_placeholder=lab_report_section
+        ) + "--- Specific Instructions for Four Pillars Analysis ---\n" + JSON_STRUCTURE_4PILLARS
+        four_pillars_data, four_pillars_raw = call_gemini_with_retry(four_pillars_prompt, RESPONSE_SCHEMA_4PILLARS)
 
-            try:
-                biomarker_data_raw, raw_biomarker_response = call_gemini_with_retry(biomarker_prompt, model, generation_config)
-                # Directly update the final_combined_output with the raw JSON from Gemini
-                if biomarker_data_raw:
-                    final_combined_output.update(biomarker_data_raw) 
-                all_raw_responses_for_debugging["Biomarkers Raw Response"] = raw_biomarker_response
-                status_message_box.write("✅ Biomarker analysis complete.")
-            except Exception as e:
-                status_message_box.error(f"Failed to analyze biomarkers: {e}")
-                # For robustness, we will continue even if one part fails, but note the error
-                pass
+        # Supplements
+        supplements_prompt = BASE_PROMPT_COMMON.format(
+            health_assessment_text=raw_health_assessment,
+            lab_report_section_placeholder=lab_report_section
+        ) + "--- Specific Instructions for Supplements and Action Items Analysis ---\n" + JSON_STRUCTURE_SUPPLEMENTS_ACTIONS
+        supplements_data, supplements_raw = call_gemini_with_retry(supplements_prompt, RESPONSE_SCHEMA_SUPPLEMENTS)
 
-            # --- Part 2: Four Pillars Analysis ---
-            status_message_box.write("💪 Moving to Four Pillars (Eat, Sleep, Move, Recover) analysis...")
-            four_pillars_prompt = BASE_PROMPT_COMMON.format(
-                health_assessment_text=raw_health_assessment_input,
-                lab_report_section_placeholder=lab_report_section_formatted
-            ) + """
---- Specific Instructions for Four Pillars Analysis ---
-🚨 **PILLAR-SPECIFIC CONTENT AND NAMING RULES - NON-NEGOTIABLE**:
-This is your most important rule for the `four_pillars` section.
-1.  **Fixed Pillar Names**: You MUST generate exactly four pillar objects. Their `name` fields MUST be exactly: `"Eat Well"`, `"Sleep Well"`, `"Move Well"`, and `"Recover Well"`.
-2.  **Omit Irrelevant Arrays**: You MUST only include the `additional_guidance.structure` keys that are relevant to the specific pillar.
-    * **For the "Eat Well" pillar**: Your `structure` object MUST ONLY contain the keys `"recommended_foods"` and `"cautious_foods"`. Do NOT include any other keys.
-    * **For the "Move Well" pillar**: Your `structure` object MUST ONLY contain the keys `"recommended_workouts"` and `"avoid_habits_move"`. Do NOT include any other keys.
-    * **For the "Sleep Well" pillar**: Your `structure` object MUST ONLY contain the keys `"recommended_recovery_tips"` and `"avoid_habits_rest_recover"`. Do NOT include any other keys.
-    * **For the "Recover Well" pillar**: Your `structure` object MUST ONLY contain the keys `"recommended_recovery_tips"` and `"avoid_habits_rest_recover"`. Do NOT include any other keys.
-""" + JSON_STRUCTURE_4PILLARS
-            full_prompts_for_debugging["Four Pillars Analysis Prompt"] = four_pillars_prompt
+        final_output = {}
+        final_output.update(biomarker_data)
+        final_output.update(four_pillars_data)
+        final_output.update(supplements_data)
 
-            try:
-                four_pillars_data_raw, raw_four_pillars_response = call_gemini_with_retry(four_pillars_prompt, model, generation_config)
-                # Directly update the final_combined_output with the raw JSON from Gemini
-                if four_pillars_data_raw:
-                    final_combined_output.update(four_pillars_data_raw)
-                all_raw_responses_for_debugging["Four Pillars Raw Response"] = raw_four_pillars_response
-                status_message_box.write("✅ Four Pillars analysis complete.")
-            except Exception as e:
-                status_message_box.error(f"Failed to analyze four pillars: {e}")
-                pass
+        st.header("🔬 Your Personalized Bewell Analysis (Interactive JSON):")
+        st.json(final_output, expanded=True)
 
-            # --- Part 3: Supplements and Action Items Analysis ---
-            status_message_box.write("💊 Moving to Supplements analysis...")
-            supplements_actions_prompt = BASE_PROMPT_COMMON.format(
-                health_assessment_text=raw_health_assessment_input,
-                lab_report_section_placeholder=lab_report_section_formatted
-            ) + "--- Specific Instructions for Supplements and Action Items Analysis ---\n" + JSON_STRUCTURE_SUPPLEMENTS_ACTIONS
-            full_prompts_for_debugging["Supplements & Action Items Analysis Prompt"] = supplements_actions_prompt
+        st.markdown("---")
+        st.header("📋 Copy Full JSON Output (Plain Text):")
+        st.text_area("Select the text below and copy it to your clipboard:",
+                     json.dumps(final_output, indent=2),
+                     height=400, disabled=True)
 
-
-            try:
-                supplements_actions_data_raw, raw_supplements_actions_response = call_gemini_with_retry(supplements_actions_prompt, model, generation_config)
-                # Directly update the final_combined_output with the raw JSON from Gemini
-                if supplements_actions_data_raw:
-                    final_combined_output.update(supplements_actions_data_raw)
-                all_raw_responses_for_debugging["Supplements & Action Items Raw Response"] = raw_supplements_actions_response
-                status_message_box.write("✅ Supplements analysis complete.")
-            except Exception as e:
-                status_message_box.error(f"Failed to analyze supplements and action items: {e}")
-                pass
-
-            # --- POST-PROCESSING AND DISPLAY LOGIC ---
-            status_message_box.write("✨ Finalizing analysis and preparing report...")
-            
-            # Perform validation/correction on the lab_analysis data within the final_combined_output
-            # This needs to be done *after* all updates are complete
-            if "lab_analysis" in final_combined_output and final_combined_output["lab_analysis"]:
-                lab_analysis = final_combined_output["lab_analysis"]
-                detailed_biomarkers = lab_analysis.get("detailed_biomarkers", [])
-                biomarkers_count = len(detailed_biomarkers)
-                
-                # Only correct if there's a mismatch or if it's currently 0 and should be higher
-                if lab_analysis.get("biomarkers_tested_count") != biomarkers_count:
-                    if lab_analysis.get("biomarkers_tested_count") is None or biomarkers_count > 0: # Avoid correcting 0 to 0
-                        status_message_box.warning(f"Correcting biomarker count in final output (was {lab_analysis.get('biomarkers_tested_count')}, now {biomarkers_count}).")
-                        lab_analysis["biomarkers_tested_count"] = biomarkers_count
-                        # Recalculate summary counts if needed, based on the actual parsed biomarkers
-                        optimal = sum(1 for bm in detailed_biomarkers if bm.get("status") == "optimal")
-                        keep_in_mind = sum(1 for bm in detailed_biomarkers if bm.get("status") == "keep_in_mind")
-                        attention = sum(1 for bm in detailed_biomarkers if bm.get("status") == "attention_needed")
-                        if "biomarker_categories_summary" in lab_analysis:
-                            lab_analysis["biomarker_categories_summary"]["optimal_count"] = optimal
-                            lab_analysis["biomarker_categories_summary"]["keep_in_mind_count"] = keep_in_mind
-                            lab_analysis["biomarker_categories_summary"]["attention_needed_count"] = attention
-            
-            # Final status update and display
-            if any(final_combined_output.values()): # Check if any of the sub-dictionaries are populated
-                status_message_box.update(label="Bewell Analysis Complete!", state="complete")
-                
-                # --- Display Interactive JSON ---
-                st.header("🔬 Your Personalized Bewell Analysis (Interactive JSON):")
-                st.json(final_combined_output, expanded=True)
-                
-                # --- Display Copyable Plain JSON ---
-                st.markdown("---") # Horizontal line for separation
-                st.header("📋 Copy Full JSON Output (Plain Text):")
-                # Convert the dictionary to a JSON string with pretty printing
-                plain_json_string = json.dumps(final_combined_output, indent=2)
-                st.text_area(
-                    "Select the text below and copy it to your clipboard:",
-                    plain_json_string,
-                    height=400, # Adjust height as needed
-                    disabled=True
-                )
-            else:
-                status_message_box.error("❌ No analysis data could be generated. Please check the inputs and API key.")
-
-        # --- Single Combined Debugging Expander ---
         with st.expander("Show All Debug Information (Raw Responses & Prompts)"):
             combined_debug_output = []
-
-            combined_debug_output.append("--- START OF RAW MODEL RESPONSES ---\n\n")
-            for part_name, response_text in all_raw_responses_for_debugging.items():
-                combined_debug_output.append(f"--- {part_name} ---\n")
-                combined_debug_output.append(response_text)
-                combined_debug_output.append(f"\n--- END OF {part_name} ---\n\n")
-
-            combined_debug_output.append("\n--- START OF FULL PROMPTS SENT TO AI ---\n\n")
-            for prompt_name, prompt_text in full_prompts_for_debugging.items():
-                combined_debug_output.append(f"--- {prompt_name} ---\n")
-                combined_debug_output.append(prompt_text)
-                combined_debug_output.append(f"\n--- END OF {prompt_name} ---\n\n")
-
-            st.code("".join(combined_debug_output), language='text')
+            combined_debug_output.append(f"--- Biomarkers Raw ---\n{biomarker_raw}\n--- End Biomarkers Raw ---\n\n")
+            combined_debug_output.append(f"--- Four Pillars Raw ---\n{four_pillars_raw}\n--- End Four Pillars Raw ---\n\n")
+            combined_debug_output.append(f"--- Supplements Raw ---\n{supplements_raw}\n--- End Supplements Raw ---\n\n")
+            st.code("".join(combined_debug_output), language='json')
 
 
 if __name__ == "__main__":

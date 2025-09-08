@@ -598,6 +598,13 @@ Here is the user's Lab Report text (potentially multiple reports combined):
                             lab_analysis["biomarker_categories_summary"]["optimal_count"] = optimal
                             lab_analysis["biomarker_categories_summary"]["keep_in_mind_count"] = keep_in_mind
                             lab_analysis["biomarker_categories_summary"]["attention_needed_count"] = attention
+                            lab_analysis["biomarker_categories_summary"]["description_text"] = (
+                                f"Out of your total {biomarkers_count} biomarker tests, "
+                                f"{optimal} fall within optimal ranges, showing strong health markers. "
+                                f"{keep_in_mind} need attention and monitoring to support your well-being. "
+                                f"{attention} require urgent action to address potential health concerns. "
+                                "This summary prioritizes your key health focus areas clearly."
+                            )
 
             if any(final_combined_output.values()):
                 status_message_box.update(label="Bewell Analysis Complete!", state="complete")

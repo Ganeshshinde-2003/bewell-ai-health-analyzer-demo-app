@@ -419,7 +419,7 @@ def main():
     """
     Main function to run the Bewell AI Health Analyzer Streamlit app with live prompt editing.
     """
-    st.title("🌿 Your Personal AI Health Assistant – HIPAA Secure by Bewell + Vertex AI (PV+2)")
+    st.title("🌿 Your Personal AI Health Assistant – HIPAA Secure by Bewell + Vertex AI (PV+4)")
     st.write("Upload your lab report(s) and health assessment files for a personalized analysis.")
 
     # Editable text areas for live prompt customization

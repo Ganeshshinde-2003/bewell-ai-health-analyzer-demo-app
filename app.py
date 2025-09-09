@@ -223,8 +223,8 @@ JSON_STRUCTURE_BIOMARKERS = """
         "status_label": "string - Simple label (e.g., 'Good (Green)' for optimal).",
         "result": "string - Your result with units (e.g., '4.310 uIU/mL').",
         "range": "string - Normal range (e.g., '0.450-4.500').",
-        "cycle_impact": "string - Explains how the biomarker affects your menstrual cycle in simple terms (e.g., 'Estradiol changes during your cycle and may cause **C1[cramps]C1**').",
-        "why_it_matters": "string - Explains the biomarker’s role in your health, linked to your data, in simple terms (e.g., 'High thyroid hormone may cause your **C1[tiredness]C1**, like a slow energy engine')."
+        "cycle_impact": "string - Include only if the biomarker has a direct or meaningful impact on menstrual cycles. DO NOT include this field for biomarkers without cycle impact.",
+        "why_it_matters": "string - Provide a detailed, descriptive explanation (4-5 sentences) using analogies, explicit links to women's health, and actionable guidance tied to user's data."
       }
     ],
     "crucial_biomarkers_to_measure": [
@@ -425,7 +425,11 @@ Here is the user's Lab Report text (potentially multiple reports combined):
             biomarker_prompt = BASE_PROMPT_COMMON.format(
                 health_assessment_text=raw_health_assessment_input,
                 lab_report_section_placeholder=lab_report_section_formatted
-            ) + "--- Specific Instructions for Biomarker Analysis ---\n" + JSON_STRUCTURE_BIOMARKERS
+            ) + """--- Specific Instructions for Biomarker Analysis ---\n
+• Only include the "cycle_impact" field for biomarkers that have a real, direct impact on menstrual cycles, such as sex hormones (Estradiol, Progesterone), gonadotropins (LH, FSH), and certain thyroid markers.
+• Do NOT include the "cycle_impact" field at all for biomarkers without cycle relevance (e.g., Vitamin D, Cholesterol, Glucose).
+• For the “why_it_matters” field, write a thorough, descriptive explanation (at least 4-5 sentences) using real-life analogies and explicit connections to women’s health and the user's provided symptoms/data.
+"""+ JSON_STRUCTURE_BIOMARKERS
             full_prompts_for_debugging["Biomarkers Analysis Prompt"] = biomarker_prompt
 
             try:

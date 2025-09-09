@@ -227,8 +227,8 @@ Your answer must be a valid JSON object and **match the provided structure exact
 
 
 
-5. **Empowering Educational Explanations**   
-   Clearly explain the “why” behind guidance. Use simple analogies (e.g., “Think of cortisol as your body’s stress alarm—if it stays on too long, it can wear down your energy like a phone that never fully charges.”).   
+5. **Empowering Educational Explanations**
+Every supplement recommendation must clearly explain why this specific supplement is recommended for you, directly linking it to your biomarkers, symptoms, or health goals. The explanation should be descriptive and highlight the expected results you may notice (e.g., more stable energy, reduced PMS cramps, improved sleep quality). Use science-backed reasoning with a women’s health focus—reference female physiology, hormonal cycles, fertility, perimenopause, or longevity where relevant. Always include simple, beginner-friendly analogies to make the science relatable (e.g., ‘Magnesium helps calm your nervous system, like putting your stress alarm on silent mode, which is especially important if you feel anxious before your period’). Make each explanation empowering, showing how this supplement can move you closer to balance and resilience in your daily life.
 
 
 
@@ -245,7 +245,7 @@ Your answer must be a valid JSON object and **match the provided structure exact
 JSON_STRUCTURE_BIOMARKERS_ORIG = """
 {
   "lab_analysis": {
-    "overall_summary": "string - Summarizes your health status using your lab results and health details in simple terms, as if explaining to someone new to health topics. Highlights your key issues and actions (e.g., 'Your **C1[tiredness]C1** and **C2[high thyroid hormone]C2** suggest checking your thyroid'). If no lab report, notes analysis uses only your health details. For unreadable lab data, states: 'Some of your lab results couldn’t be read due to file issues. Advice uses your available data.'",
+    "overall_summary": "string - Provide a clear, science-backed summary of your health status using your lab results and health assessment, written in simple, beginner-friendly language with a women-first focus. Always connect biomarkers and symptoms to female physiology (e.g., menstrual cycles, fertility, skin, mood, metabolism, energy). Highlight both strengths (what is working well) and concerns (what needs attention). Use simple analogies to explain science (e.g., ‘Think of cortisol as your stress alarm—when it stays high, it wears down your energy like a phone that never fully charges’). Clearly describe how abnormal or borderline biomarkers may relate to your reported symptoms (e.g., ‘Your elevated TSH may be slowing your thyroid, which can explain your tiredness, weight changes, and irregular periods’). If menstrual cycle phase or life stage (perimenopause, postpartum, menopause) is known, tailor interpretation accordingly. If it is not provided, explain how results can shift with cycle phases and recommend ideal testing windows when relevant. If no lab report is included, note that the analysis is based solely on health assessment data and provide general women’s health insights. If some lab results are missing or unreadable, clearly state this and provide guidance using available data.",
     "biomarkers_tested_count": "integer - Count of 'detailed_biomarkers' objects. Verified to match the array length. Set to 0 if you provided no lab report.",
     "biomarker_categories_summary": {
       "description_text": "string - Summarizes your biomarker categories in simple terms (e.g., 'Out of **C1[{biomarkers_tested_count}]C1** tests, **C2[{optimal_count}]C2** are good, **C2[{keep_in_mind_count}]C2** need watching, and **C2[{attention_needed_count}]C2** need action'). Excludes 'Not Performed' tests.",
@@ -261,7 +261,7 @@ JSON_STRUCTURE_BIOMARKERS_ORIG = """
         "result": "string - Your result with units (e.g., '4.310 uIU/mL').",
         "range": "string - Normal range (e.g., '0.450-4.500').",
         "cycle_impact": "string - Include only if the biomarker has a direct or meaningful impact on menstrual cycles. DO NOT include this field for biomarkers without cycle impact.",
-        "why_it_matters": "string - Provide a detailed, descriptive explanation (4-5 sentences) using analogies, explicit links to women's health, and actionable guidance tied to user's data."
+        "why_it_matters": "string - Provide a detailed,  science-backed descriptive explanation, explicit links to women’s health, and actionable guidance tied to user’s data."
       }
     ],
     "crucial_biomarkers_to_measure": [
